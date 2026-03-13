@@ -1,10 +1,15 @@
 package com.kndhjk.nokiaworms
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
@@ -16,11 +21,19 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 class GameView(context: Context) : View(context) {
+    private val legacyLogo = loadBitmap("legacy/mgilog.png")
+    private val legacyTitle = loadBitmap("legacy/mgi24171.png")
+    private val legacyWorm = loadBitmap("legacy/icon.png")
+    private val legacyTileA = loadBitmap("legacy/mgc27804.png")
+    private val legacyTileB = loadBitmap("legacy/mgc30403.png")
+
     private val sky = Paint().apply { color = Color.rgb(139, 197, 255) }
     private val mountainBack = Paint().apply { color = Color.rgb(156, 190, 118) }
     private val mountainFront = Paint().apply { color = Color.rgb(122, 157, 83) }
     private val ground = Paint().apply { color = Color.rgb(99, 73, 45) }
     private val grass = Paint().apply { color = Color.rgb(95, 160, 66) }
+    private val tilePaintA = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val tilePaintB = Paint(Paint.ANTI_ALIAS_FLAG)
     private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         textSize = 72f
@@ -94,6 +107,11 @@ class GameView(context: Context) : View(context) {
         Worm(0.18f, hp = 100),
         Worm(0.82f, hp = 100)
     )
+
+    init {
+        if (legacyTileA != null) tilePaintA.shader = BitmapShader(legacyTileA, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        if (legacyTileB != null) tilePaintB.shader = BitmapShader(legacyTileB, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -170,6 +188,10 @@ class GameView(context: Context) : View(context) {
             close()
         }
         canvas.drawPath(front, mountainFront)
+        legacyTitle?.let {
+            val dest = RectF(w * 0.70f, h * 0.08f, w * 0.96f, h * 0.40f)
+            canvas.drawBitmap(it, null, dest, null)
+        }
     }
 
     private fun drawTerrain(canvas: Canvas, w: Float, h: Float) {
@@ -182,20 +204,24 @@ class GameView(context: Context) : View(context) {
             close()
         }
         canvas.drawPath(path, ground)
+        tilePaintA.shader?.let { canvas.drawPath(path, tilePaintA) }
         val grassPath = Path().apply {
             moveTo(0f, terrainLine.first())
             for (x in terrainLine.indices step 2) lineTo(x.toFloat(), terrainLine[x] - 6f)
         }
         canvas.drawPath(grassPath, grass)
+        tilePaintB.shader?.let { canvas.drawPath(grassPath, tilePaintB) }
     }
 
     private fun drawTitleScreen(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRoundRect(w * 0.18f, h * 0.20f, w * 0.82f, h * 0.76f, 28f, 28f, panelPaint)
-        canvas.drawText("Nokia Worms", w / 2f, h * 0.32f, titlePaint)
-        canvas.drawText("Termux prototype", w / 2f, h * 0.39f, subtitlePaint)
-        canvas.drawText("Tap upper half: 1 Player vs AI", w / 2f, h * 0.52f, text)
-        canvas.drawText("Tap lower half: 2 Players", w / 2f, h * 0.62f, text)
-        canvas.drawText("Legacy feel, new Android build", w / 2f, h * 0.71f, subtitlePaint)
+        canvas.drawRoundRect(w * 0.12f, h * 0.16f, w * 0.88f, h * 0.82f, 28f, 28f, panelPaint)
+        legacyLogo?.let {
+            val dest = RectF(w * 0.18f, h * 0.18f, w * 0.82f, h * 0.48f)
+            canvas.drawBitmap(it, null, dest, null)
+        } ?: canvas.drawText("Nokia Worms", w / 2f, h * 0.32f, titlePaint)
+        canvas.drawText("Tap upper half: 1 Player vs AI", w / 2f, h * 0.58f, text)
+        canvas.drawText("Tap lower half: 2 Players", w / 2f, h * 0.68f, text)
+        canvas.drawText("Legacy graphics imported from your Java ME repo", w / 2f, h * 0.77f, subtitlePaint)
     }
 
     private fun drawTouchZones(canvas: Canvas, w: Float, h: Float) {
@@ -212,12 +238,21 @@ class GameView(context: Context) : View(context) {
             if (worm.hp <= 0) return@forEachIndexed
             val cx = worm.x * w
             val cy = wormY(index, w)
-            val paint = if (index == 0) wormA else wormB
-            canvas.drawCircle(cx, cy, 22f, paint)
-            canvas.drawRect(cx - 16f, cy + 14f, cx + 16f, cy + 38f, paint)
+            if (legacyWorm != null) {
+                val size = 56f
+                val dest = RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+                canvas.drawBitmap(legacyWorm, null, dest, null)
+                if (index == 1) {
+                    val overlay = Paint().apply { color = Color.argb(90, 80, 255, 120) }
+                    canvas.drawOval(dest, overlay)
+                }
+            } else {
+                val paint = if (index == 0) wormA else wormB
+                canvas.drawCircle(cx, cy, 22f, paint)
+                canvas.drawRect(cx - 16f, cy + 14f, cx + 16f, cy + 38f, paint)
+            }
             canvas.drawCircle(cx, cy, 22f, wormOutline)
-            canvas.drawRect(cx - 16f, cy + 14f, cx + 16f, cy + 38f, wormOutline)
-            canvas.drawText("${worm.hp}", cx - 18f, cy - 28f, text)
+            canvas.drawText("${worm.hp}", cx - 18f, cy - 34f, text)
             if (index == activePlayer && winner == null) canvas.drawText("◀", cx - 40f, cy - 10f, text)
         }
     }
@@ -245,10 +280,10 @@ class GameView(context: Context) : View(context) {
         canvas.drawText("Time: ${seconds}s", w * 0.80f, 58f, text)
         canvas.drawText("Jumps: ${worms[activePlayer].jumpsLeft}", w * 0.76f, 98f, text)
         drawWindArrow(canvas, w * 0.76f, 142f)
-        val footer = winner?.let { idx ->
+        val footer = winner?.let {
             when {
-                gameMode == GameMode.PVE && idx == 1 -> "AI wins — tap to restart"
-                idx == 0 -> "Orange wins — tap to restart"
+                gameMode == GameMode.PVE && it == 1 -> "AI wins — tap to restart"
+                it == 0 -> "Orange wins — tap to restart"
                 else -> "Green wins — tap to restart"
             }
         } ?: if (gameMode == GameMode.PVE && activePlayer == 1) {
@@ -383,7 +418,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun snapWormsToTerrain(w: Float) {
-        worms.forEachIndexed { index, worm ->
+        worms.forEachIndexed { _, worm ->
             if (worm.hp <= 0) return@forEachIndexed
             worm.yOffset = terrainHeightAt(worm.x * w) - 26f
         }
@@ -490,4 +525,8 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun randomWind(): Float = Random.nextFloat() * 80f - 40f
+
+    private fun loadBitmap(path: String): Bitmap? = runCatching {
+        context.assets.open(path).use { BitmapFactory.decodeStream(it) }
+    }.getOrNull()
 }
