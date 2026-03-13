@@ -12,6 +12,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.atan2
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -104,6 +105,10 @@ class GameView(context: Context) : View(context) {
     private var selectedWeapon = 0
     private var gameMode = GameMode.TITLE
     private var aiShotAtMs = 0L
+    private var moveInput = 0f
+    private var aimActive = false
+    private var chargingShot = false
+    private var chargeStartMs = 0L
 
     private val weapons = listOf(
         Weapon("Bazooka", 48f, 55, 1.00f),
@@ -182,6 +187,7 @@ class GameView(context: Context) : View(context) {
         lastTimeNanos = now
 
         if (gameMode != GameMode.TITLE) {
+            updateTouchControls(dt, w)
             updateWormPhysics(dt, w)
             projectile?.let { updateProjectile(it, dt, w, h) }
             explosion?.let { updateExplosion(it, dt) }
@@ -263,12 +269,26 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawTouchZones(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRect(0f, h * 0.78f, w * 0.22f, h, moveHintPaint)
-        canvas.drawRect(w * 0.22f, h * 0.78f, w * 0.44f, h, moveHintPaint)
-        canvas.drawRect(w * 0.78f, h * 0.78f, w, h, moveHintPaint)
-        canvas.drawText("MOVE◀", 18f, h - 18f, smallText)
-        canvas.drawText("JUMP", w * 0.26f, h - 18f, smallText)
-        canvas.drawText("▶MOVE", w * 0.82f, h - 18f, smallText)
+        val pad = RectF(24f, h - 150f, 174f, h - 20f)
+        canvas.drawOval(pad, moveHintPaint)
+        canvas.drawOval(pad, hudBorder)
+        canvas.drawText("MOVE", 62f, h - 80f, smallText)
+        canvas.drawText("◀", 38f, h - 78f, text)
+        canvas.drawText("▶", 132f, h - 78f, text)
+
+        val jump = RectF(w - 320f, h - 150f, w - 210f, h - 40f)
+        val weapon = RectF(w - 190f, h - 150f, w - 80f, h - 40f)
+        canvas.drawOval(jump, selectBar)
+        canvas.drawOval(jump, hudBorder)
+        canvas.drawOval(weapon, hud)
+        canvas.drawOval(weapon, hudBorder)
+        canvas.drawText("JUMP", jump.left + 14f, jump.centerY() + 8f, smallText)
+        canvas.drawText("ARM", weapon.left + 22f, weapon.centerY() + 8f, smallText)
+
+        val aim = RectF(w - 280f, h - 340f, w - 24f, h - 170f)
+        canvas.drawRoundRect(aim, 18f, 18f, moveHintPaint)
+        canvas.drawRoundRect(aim, 18f, 18f, hudBorder)
+        canvas.drawText("DRAG TO AIM", aim.left + 26f, aim.centerY() + 8f, smallText)
     }
 
     private fun drawWorms(canvas: Canvas, w: Float) {
@@ -621,33 +641,80 @@ class GameView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action != MotionEvent.ACTION_DOWN) return true
-        val xRatio = event.x / width.coerceAtLeast(1)
-        val yRatio = event.y / height.coerceAtLeast(1)
+        val w = width.toFloat().coerceAtLeast(1f)
+        val h = height.toFloat().coerceAtLeast(1f)
+        val xRatio = event.x / w
+        val yRatio = event.y / h
         if (gameMode == GameMode.TITLE) {
-            startGame(if (yRatio < 0.5f) GameMode.PVE else GameMode.PVP)
+            if (event.action == MotionEvent.ACTION_DOWN) startGame(if (yRatio < 0.5f) GameMode.PVE else GameMode.PVP)
             return true
         }
         if (winner != null) {
-            gameMode = GameMode.TITLE
-            restart()
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                gameMode = GameMode.TITLE
+                restart()
+            }
             return true
         }
         if (projectile != null || explosion != null) return true
         if (gameMode == GameMode.PVE && activePlayer == 1) return true
-        when {
-            yRatio < 0.20f && xRatio < 0.5f -> power = (power + 0.1f).coerceAtMost(1f)
-            yRatio < 0.20f && xRatio >= 0.5f -> cycleWeapon()
-            yRatio > 0.78f && xRatio < 0.22f -> moveWorm(-0.018f)
-            yRatio > 0.78f && xRatio < 0.44f -> jumpWorm()
-            yRatio > 0.78f && xRatio > 0.78f -> moveWorm(0.018f)
-            yRatio > 0.55f -> power = (power - 0.1f).coerceAtLeast(0.1f)
-            xRatio < 0.33f -> angleDeg = (angleDeg + 5f).coerceAtMost(85f)
-            xRatio > 0.66f -> angleDeg = (angleDeg - 5f).coerceAtLeast(5f)
-            else -> fire()
+
+        val movePad = RectF(24f, h - 150f, 174f, h - 20f)
+        val jumpBtn = RectF(w - 320f, h - 150f, w - 210f, h - 40f)
+        val weaponBtn = RectF(w - 190f, h - 150f, w - 80f, h - 40f)
+        val aimZone = RectF(w - 280f, h - 340f, w - 24f, h - 170f)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                when {
+                    movePad.contains(event.x, event.y) -> {
+                        val center = movePad.centerX()
+                        moveInput = ((event.x - center) / (movePad.width() / 2f)).coerceIn(-1f, 1f)
+                    }
+                    jumpBtn.contains(event.x, event.y) && event.actionMasked == MotionEvent.ACTION_DOWN -> jumpWorm()
+                    weaponBtn.contains(event.x, event.y) && event.actionMasked == MotionEvent.ACTION_DOWN -> cycleWeapon()
+                    aimZone.contains(event.x, event.y) -> {
+                        aimActive = true
+                        updateAimFromTouch(event.x, event.y, w)
+                        if (!chargingShot && event.actionMasked == MotionEvent.ACTION_DOWN) {
+                            chargingShot = true
+                            chargeStartMs = System.currentTimeMillis()
+                        }
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (chargingShot && aimActive) {
+                    val held = (System.currentTimeMillis() - chargeStartMs).coerceAtMost(1600L)
+                    power = (0.2f + held / 1600f * 0.8f).coerceIn(0.2f, 1f)
+                    fire()
+                }
+                moveInput = 0f
+                aimActive = false
+                chargingShot = false
+            }
         }
         invalidate()
         return true
+    }
+
+    private fun updateTouchControls(dt: Float, w: Float) {
+        if (moveInput == 0f || projectile != null || explosion != null) return
+        val delta = moveInput * dt * 0.09f
+        if (delta != 0f) moveWorm(delta)
+    }
+
+    private fun updateAimFromTouch(x: Float, y: Float, w: Float) {
+        val wormX = worms[activePlayer].x * w
+        val wormY = wormY(activePlayer, w) - 16f
+        val dx = x - wormX
+        val dy = wormY - y
+        val facingDx = if (activePlayer == 0) dx.coerceAtLeast(1f) else (-dx).coerceAtLeast(1f)
+        angleDeg = Math.toDegrees(atan2(dy.toDouble(), facingDx.toDouble())).toFloat().coerceIn(5f, 85f)
+        if (chargingShot) {
+            val distance = sqrt(dx * dx + (wormY - y) * (wormY - y))
+            power = (distance / (w * 0.35f)).coerceIn(0.15f, 1f)
+        }
     }
 
     private fun cycleWeapon() {
