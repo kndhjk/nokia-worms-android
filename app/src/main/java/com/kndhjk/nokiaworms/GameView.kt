@@ -21,6 +21,19 @@ class GameView(context: Context) : View(context) {
     private val mountainFront = Paint().apply { color = Color.rgb(122, 157, 83) }
     private val ground = Paint().apply { color = Color.rgb(99, 73, 45) }
     private val grass = Paint().apply { color = Color.rgb(95, 160, 66) }
+    private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        textSize = 72f
+        textAlign = Paint.Align.CENTER
+    }
+    private val subtitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.DKGRAY
+        textSize = 30f
+        textAlign = Paint.Align.CENTER
+    }
+    private val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(215, 255, 255, 255)
+    }
     private val wormA = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 170, 64) }
     private val wormB = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(88, 222, 120) }
     private val wormOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -61,12 +74,16 @@ class GameView(context: Context) : View(context) {
     private val turnDurationMs = 20_000L
     private var terrain: FloatArray? = null
     private var selectedWeapon = 0
+    private var gameMode = GameMode.TITLE
+    private var aiShotAtMs = 0L
 
     private val weapons = listOf(
         Weapon("Bazooka", 48f, 55, 1.00f),
         Weapon("Grenade", 64f, 70, 0.85f),
         Weapon("Missile", 34f, 40, 1.20f)
     )
+
+    private enum class GameMode { TITLE, PVP, PVE }
 
     private data class Worm(var x: Float, var yOffset: Float = 0f, var hp: Int, var jumpsLeft: Int = 1)
     private data class Projectile(var x: Float, var y: Float, var vx: Float, var vy: Float, val weapon: Weapon)
@@ -87,13 +104,18 @@ class GameView(context: Context) : View(context) {
 
         drawBackground(canvas, w, h)
         drawTerrain(canvas, w, h)
-        drawTouchZones(canvas, w, h)
-        drawWorms(canvas, w)
-        drawProjectile(canvas)
-        drawExplosion(canvas)
-        drawHud(canvas, w, h)
 
-        if (projectile != null || explosion != null || winner != null) invalidate()
+        if (gameMode == GameMode.TITLE) {
+            drawTitleScreen(canvas, w, h)
+        } else {
+            drawTouchZones(canvas, w, h)
+            drawWorms(canvas, w)
+            drawProjectile(canvas)
+            drawExplosion(canvas)
+            drawHud(canvas, w, h)
+        }
+
+        if (projectile != null || explosion != null || winner != null || gameMode == GameMode.TITLE) invalidate()
     }
 
     private fun ensureTerrain(w: Float, h: Float) {
@@ -117,12 +139,14 @@ class GameView(context: Context) : View(context) {
         val dt = ((now - lastTimeNanos) / 1_000_000_000f).coerceAtMost(0.033f)
         lastTimeNanos = now
 
-        projectile?.let { updateProjectile(it, dt, w, h) }
-        explosion?.let { updateExplosion(it, dt) }
-
-        if (winner == null && projectile == null && explosion == null) {
-            val leftMs = turnDurationMs - (System.currentTimeMillis() - turnStartMs)
-            if (leftMs <= 0) advanceTurn()
+        if (gameMode != GameMode.TITLE) {
+            projectile?.let { updateProjectile(it, dt, w, h) }
+            explosion?.let { updateExplosion(it, dt) }
+            if (winner == null && projectile == null && explosion == null) {
+                maybeRunAiTurn(w)
+                val leftMs = turnDurationMs - (System.currentTimeMillis() - turnStartMs)
+                if (leftMs <= 0) advanceTurn()
+            }
         }
     }
 
@@ -165,6 +189,15 @@ class GameView(context: Context) : View(context) {
         canvas.drawPath(grassPath, grass)
     }
 
+    private fun drawTitleScreen(canvas: Canvas, w: Float, h: Float) {
+        canvas.drawRoundRect(w * 0.18f, h * 0.20f, w * 0.82f, h * 0.76f, 28f, 28f, panelPaint)
+        canvas.drawText("Nokia Worms", w / 2f, h * 0.32f, titlePaint)
+        canvas.drawText("Termux prototype", w / 2f, h * 0.39f, subtitlePaint)
+        canvas.drawText("Tap upper half: 1 Player vs AI", w / 2f, h * 0.52f, text)
+        canvas.drawText("Tap lower half: 2 Players", w / 2f, h * 0.62f, text)
+        canvas.drawText("Legacy feel, new Android build", w / 2f, h * 0.71f, subtitlePaint)
+    }
+
     private fun drawTouchZones(canvas: Canvas, w: Float, h: Float) {
         canvas.drawRect(0f, h * 0.78f, w * 0.22f, h, moveHintPaint)
         canvas.drawRect(w * 0.22f, h * 0.78f, w * 0.44f, h, moveHintPaint)
@@ -201,7 +234,7 @@ class GameView(context: Context) : View(context) {
 
     private fun drawHud(canvas: Canvas, w: Float, h: Float) {
         canvas.drawRoundRect(20f, 20f, w - 20f, 190f, 18f, 18f, hud)
-        val turn = if (activePlayer == 0) "Orange" else "Green"
+        val turn = if (activePlayer == 0) "Orange" else if (gameMode == GameMode.PVE) "AI" else "Green"
         val leftMs = max(0, turnDurationMs - (System.currentTimeMillis() - turnStartMs))
         val seconds = leftMs / 1000 + 1
         canvas.drawText("Turn: $turn", 40f, 58f, text)
@@ -212,8 +245,17 @@ class GameView(context: Context) : View(context) {
         canvas.drawText("Time: ${seconds}s", w * 0.80f, 58f, text)
         canvas.drawText("Jumps: ${worms[activePlayer].jumpsLeft}", w * 0.76f, 98f, text)
         drawWindArrow(canvas, w * 0.76f, 142f)
-        val footer = winner?.let { idx -> if (idx == 0) "Orange wins — tap to restart" else "Green wins — tap to restart" }
-            ?: "Top: power/weapon   Middle: aim/fire   Bottom: move/jump"
+        val footer = winner?.let { idx ->
+            when {
+                gameMode == GameMode.PVE && idx == 1 -> "AI wins — tap to restart"
+                idx == 0 -> "Orange wins — tap to restart"
+                else -> "Green wins — tap to restart"
+            }
+        } ?: if (gameMode == GameMode.PVE && activePlayer == 1) {
+            "AI is aiming..."
+        } else {
+            "Top: power/weapon   Middle: aim/fire   Bottom: move/jump"
+        }
         canvas.drawText(footer, 40f, h - 54f, smallText)
     }
 
@@ -313,7 +355,31 @@ class GameView(context: Context) : View(context) {
         wind = randomWind()
         turnStartMs = System.currentTimeMillis()
         worms[activePlayer].jumpsLeft = 1
+        aiShotAtMs = 0L
         invalidate()
+    }
+
+    private fun maybeRunAiTurn(w: Float) {
+        if (gameMode != GameMode.PVE || activePlayer != 1 || winner != null) return
+        val now = System.currentTimeMillis()
+        if (aiShotAtMs == 0L) {
+            aiShotAtMs = now + 900L
+            return
+        }
+        if (now < aiShotAtMs) return
+        val player = worms[0]
+        val ai = worms[1]
+        val distance = abs((player.x - ai.x) * w)
+        selectedWeapon = when {
+            distance > w * 0.45f -> 2
+            distance > w * 0.28f -> 0
+            else -> 1
+        }
+        angleDeg = (35 + Random.nextInt(30)).toFloat()
+        power = (distance / (w * 0.70f)).coerceIn(0.35f, 0.95f)
+        if (Random.nextFloat() < 0.25f && worms[1].jumpsLeft > 0) jumpWorm()
+        fire()
+        aiShotAtMs = 0L
     }
 
     private fun snapWormsToTerrain(w: Float) {
@@ -336,13 +402,19 @@ class GameView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action != MotionEvent.ACTION_DOWN) return true
+        val xRatio = event.x / width.coerceAtLeast(1)
+        val yRatio = event.y / height.coerceAtLeast(1)
+        if (gameMode == GameMode.TITLE) {
+            startGame(if (yRatio < 0.5f) GameMode.PVE else GameMode.PVP)
+            return true
+        }
         if (winner != null) {
+            gameMode = GameMode.TITLE
             restart()
             return true
         }
         if (projectile != null || explosion != null) return true
-        val xRatio = event.x / width.coerceAtLeast(1)
-        val yRatio = event.y / height.coerceAtLeast(1)
+        if (gameMode == GameMode.PVE && activePlayer == 1) return true
         when {
             yRatio < 0.20f && xRatio < 0.5f -> power = (power + 0.1f).coerceAtMost(1f)
             yRatio < 0.20f && xRatio >= 0.5f -> cycleWeapon()
@@ -395,6 +467,11 @@ class GameView(context: Context) : View(context) {
         invalidate()
     }
 
+    private fun startGame(mode: GameMode) {
+        gameMode = mode
+        restart()
+    }
+
     private fun restart() {
         worms[0] = Worm(0.18f, hp = 100)
         worms[1] = Worm(0.82f, hp = 100)
@@ -408,6 +485,7 @@ class GameView(context: Context) : View(context) {
         power = 0.6f
         wind = randomWind()
         turnStartMs = System.currentTimeMillis()
+        aiShotAtMs = 0L
         invalidate()
     }
 
