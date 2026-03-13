@@ -65,6 +65,14 @@ class GameView(context: Context) : View(context) {
     private val hud = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(190, 255, 255, 255)
     }
+    private val hudBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    private val selectBar = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(120, 255, 215, 64)
+    }
     private val projectilePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(180, 255, 215, 64) }
     private val windPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -214,7 +222,9 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawTitleScreen(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRoundRect(w * 0.12f, h * 0.16f, w * 0.88f, h * 0.82f, 28f, 28f, panelPaint)
+        val panel = RectF(w * 0.12f, h * 0.16f, w * 0.88f, h * 0.82f)
+        canvas.drawRoundRect(panel, 28f, 28f, panelPaint)
+        canvas.drawRoundRect(panel, 28f, 28f, hudBorder)
         legacyLogo?.let {
             val dest = RectF(w * 0.18f, h * 0.18f, w * 0.82f, h * 0.48f)
             canvas.drawBitmap(it, null, dest, null)
@@ -223,8 +233,14 @@ class GameView(context: Context) : View(context) {
             canvas.drawBitmap(it, null, RectF(w * 0.20f, h * 0.50f, w * 0.30f, h * 0.62f), null)
             canvas.drawBitmap(it, null, RectF(w * 0.70f, h * 0.50f, w * 0.80f, h * 0.62f), null)
         }
-        canvas.drawText("Tap upper half: 1 Player vs AI", w / 2f, h * 0.58f, text)
-        canvas.drawText("Tap lower half: 2 Players", w / 2f, h * 0.68f, text)
+        val row1 = RectF(w * 0.20f, h * 0.53f, w * 0.80f, h * 0.61f)
+        val row2 = RectF(w * 0.20f, h * 0.63f, w * 0.80f, h * 0.71f)
+        canvas.drawRoundRect(row1, 12f, 12f, selectBar)
+        canvas.drawRoundRect(row1, 12f, 12f, hudBorder)
+        canvas.drawRoundRect(row2, 12f, 12f, hud)
+        canvas.drawRoundRect(row2, 12f, 12f, hudBorder)
+        canvas.drawText("1 Player vs AI", w / 2f, h * 0.585f, text)
+        canvas.drawText("2 Players", w / 2f, h * 0.685f, text)
         canvas.drawText("Legacy graphics imported from your Java ME repo", w / 2f, h * 0.77f, subtitlePaint)
     }
 
@@ -272,7 +288,9 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawHud(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRoundRect(20f, 20f, w - 20f, 190f, 18f, 18f, hud)
+        val box = RectF(20f, 20f, w - 20f, 190f)
+        canvas.drawRoundRect(box, 18f, 18f, hud)
+        canvas.drawRoundRect(box, 18f, 18f, hudBorder)
         val turn = if (activePlayer == 0) "Orange" else if (gameMode == GameMode.PVE) "AI" else "Green"
         val leftMs = max(0, turnDurationMs - (System.currentTimeMillis() - turnStartMs))
         val seconds = leftMs / 1000 + 1
@@ -281,7 +299,7 @@ class GameView(context: Context) : View(context) {
             canvas.drawBitmap(it, null, dest, null)
         }
         canvas.drawText("Turn: $turn", 96f, 58f, text)
-        canvas.drawText("Weapon: ${weapons[selectedWeapon].name}", 40f, 98f, text)
+        drawWeaponStrip(canvas, w)
         canvas.drawText("Angle: ${angleDeg.toInt()}°", 40f, 138f, text)
         canvas.drawText("Power: ${(power * 100).toInt()}%", w * 0.32f, 138f, text)
         canvas.drawText("Wind: ${"%+.1f".format(wind / 14f)}", w * 0.58f, 138f, text)
@@ -300,6 +318,20 @@ class GameView(context: Context) : View(context) {
             "Top: power/weapon   Middle: aim/fire   Bottom: move/jump"
         }
         canvas.drawText(footer, 40f, h - 54f, smallText)
+    }
+
+    private fun drawWeaponStrip(canvas: Canvas, w: Float) {
+        val startX = 40f
+        val y = 92f
+        val itemW = min(150f, (w - 360f) / weapons.size.coerceAtLeast(1))
+        weapons.forEachIndexed { index, weapon ->
+            val left = startX + index * (itemW + 12f)
+            val rect = RectF(left, y, left + itemW, y + 28f)
+            val bg = if (index == selectedWeapon) selectBar else hud
+            canvas.drawRoundRect(rect, 10f, 10f, bg)
+            canvas.drawRoundRect(rect, 10f, 10f, hudBorder)
+            canvas.drawText(weapon.name, left + 12f, y + 21f, smallText)
+        }
     }
 
     private fun drawWindArrow(canvas: Canvas, x: Float, y: Float) {
