@@ -12,6 +12,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 class GameView(context: Context) : View(context) {
@@ -29,22 +30,23 @@ class GameView(context: Context) : View(context) {
     }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
-        textSize = 40f
+        textSize = 38f
     }
     private val smallText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
-        textSize = 28f
+        textSize = 24f
     }
     private val hud = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(190, 255, 255, 255)
     }
     private val projectilePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(180, 255, 215, 64)
-    }
+    private val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(180, 255, 215, 64) }
     private val windPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(60, 90, 140)
         strokeWidth = 6f
+    }
+    private val moveHintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(120, 0, 0, 0)
     }
 
     private var angleDeg = 45f
@@ -58,10 +60,18 @@ class GameView(context: Context) : View(context) {
     private var turnStartMs = System.currentTimeMillis()
     private val turnDurationMs = 20_000L
     private var terrain: FloatArray? = null
+    private var selectedWeapon = 0
 
-    private data class Worm(var x: Float, var yOffset: Float = 0f, var hp: Int)
-    private data class Projectile(var x: Float, var y: Float, var vx: Float, var vy: Float)
+    private val weapons = listOf(
+        Weapon("Bazooka", 48f, 55, 1.00f),
+        Weapon("Grenade", 64f, 70, 0.85f),
+        Weapon("Missile", 34f, 40, 1.20f)
+    )
+
+    private data class Worm(var x: Float, var yOffset: Float = 0f, var hp: Int, var jumpsLeft: Int = 1)
+    private data class Projectile(var x: Float, var y: Float, var vx: Float, var vy: Float, val weapon: Weapon)
     private data class Explosion(var x: Float, var y: Float, var radius: Float, var age: Float = 0f)
+    private data class Weapon(val name: String, val radius: Float, val maxDamage: Int, val speedFactor: Float)
 
     private val worms = arrayOf(
         Worm(0.18f, hp = 100),
@@ -77,14 +87,13 @@ class GameView(context: Context) : View(context) {
 
         drawBackground(canvas, w, h)
         drawTerrain(canvas, w, h)
+        drawTouchZones(canvas, w, h)
         drawWorms(canvas, w)
         drawProjectile(canvas)
         drawExplosion(canvas)
         drawHud(canvas, w, h)
 
-        if (projectile != null || explosion != null || winner != null) {
-            invalidate()
-        }
+        if (projectile != null || explosion != null || winner != null) invalidate()
     }
 
     private fun ensureTerrain(w: Float, h: Float) {
@@ -119,7 +128,6 @@ class GameView(context: Context) : View(context) {
 
     private fun drawBackground(canvas: Canvas, w: Float, h: Float) {
         canvas.drawRect(0f, 0f, w, h, sky)
-
         val back = Path().apply {
             moveTo(0f, h * 0.70f)
             cubicTo(w * 0.15f, h * 0.35f, w * 0.32f, h * 0.55f, w * 0.45f, h * 0.42f)
@@ -129,7 +137,6 @@ class GameView(context: Context) : View(context) {
             close()
         }
         canvas.drawPath(back, mountainBack)
-
         val front = Path().apply {
             moveTo(0f, h * 0.78f)
             cubicTo(w * 0.20f, h * 0.48f, w * 0.35f, h * 0.66f, w * 0.55f, h * 0.46f)
@@ -151,14 +158,20 @@ class GameView(context: Context) : View(context) {
             close()
         }
         canvas.drawPath(path, ground)
-
         val grassPath = Path().apply {
             moveTo(0f, terrainLine.first())
-            for (x in terrainLine.indices step 2) {
-                lineTo(x.toFloat(), terrainLine[x] - 6f)
-            }
+            for (x in terrainLine.indices step 2) lineTo(x.toFloat(), terrainLine[x] - 6f)
         }
         canvas.drawPath(grassPath, grass)
+    }
+
+    private fun drawTouchZones(canvas: Canvas, w: Float, h: Float) {
+        canvas.drawRect(0f, h * 0.78f, w * 0.22f, h, moveHintPaint)
+        canvas.drawRect(w * 0.22f, h * 0.78f, w * 0.44f, h, moveHintPaint)
+        canvas.drawRect(w * 0.78f, h * 0.78f, w, h, moveHintPaint)
+        canvas.drawText("MOVE◀", 18f, h - 18f, smallText)
+        canvas.drawText("JUMP", w * 0.26f, h - 18f, smallText)
+        canvas.drawText("▶MOVE", w * 0.82f, h - 18f, smallText)
     }
 
     private fun drawWorms(canvas: Canvas, w: Float) {
@@ -172,15 +185,11 @@ class GameView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy, 22f, wormOutline)
             canvas.drawRect(cx - 16f, cy + 14f, cx + 16f, cy + 38f, wormOutline)
             canvas.drawText("${worm.hp}", cx - 18f, cy - 28f, text)
-            if (index == activePlayer && winner == null) {
-                canvas.drawText("◀", cx - 40f, cy - 10f, text)
-            }
+            if (index == activePlayer && winner == null) canvas.drawText("◀", cx - 40f, cy - 10f, text)
         }
     }
 
-    private fun drawProjectile(canvas: Canvas) {
-        projectile?.let { canvas.drawCircle(it.x, it.y, 10f, projectilePaint) }
-    }
+    private fun drawProjectile(canvas: Canvas) { projectile?.let { canvas.drawCircle(it.x, it.y, 10f, projectilePaint) } }
 
     private fun drawExplosion(canvas: Canvas) {
         explosion?.let {
@@ -191,23 +200,21 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawHud(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRoundRect(20f, 20f, w - 20f, 175f, 18f, 18f, hud)
+        canvas.drawRoundRect(20f, 20f, w - 20f, 190f, 18f, 18f, hud)
         val turn = if (activePlayer == 0) "Orange" else "Green"
         val leftMs = max(0, turnDurationMs - (System.currentTimeMillis() - turnStartMs))
         val seconds = leftMs / 1000 + 1
-        canvas.drawText("Turn: $turn", 40f, 62f, text)
-        canvas.drawText("Angle: ${angleDeg.toInt()}°", 40f, 104f, text)
-        canvas.drawText("Power: ${(power * 100).toInt()}%", w * 0.34f, 104f, text)
-        canvas.drawText("Wind: ${"%+.1f".format(wind / 14f)}", w * 0.60f, 104f, text)
-        canvas.drawText("Time: ${seconds}s", w * 0.80f, 62f, text)
-
-        drawWindArrow(canvas, w * 0.78f, 108f)
-
-        val footer = winner?.let { idx ->
-            if (idx == 0) "Orange wins — tap to restart"
-            else "Green wins — tap to restart"
-        } ?: "Left/right aim  Top/bottom power  Center fire"
-        canvas.drawText(footer, 40f, h - 28f, smallText)
+        canvas.drawText("Turn: $turn", 40f, 58f, text)
+        canvas.drawText("Weapon: ${weapons[selectedWeapon].name}", 40f, 98f, text)
+        canvas.drawText("Angle: ${angleDeg.toInt()}°", 40f, 138f, text)
+        canvas.drawText("Power: ${(power * 100).toInt()}%", w * 0.32f, 138f, text)
+        canvas.drawText("Wind: ${"%+.1f".format(wind / 14f)}", w * 0.58f, 138f, text)
+        canvas.drawText("Time: ${seconds}s", w * 0.80f, 58f, text)
+        canvas.drawText("Jumps: ${worms[activePlayer].jumpsLeft}", w * 0.76f, 98f, text)
+        drawWindArrow(canvas, w * 0.76f, 142f)
+        val footer = winner?.let { idx -> if (idx == 0) "Orange wins — tap to restart" else "Green wins — tap to restart" }
+            ?: "Top: power/weapon   Middle: aim/fire   Bottom: move/jump"
+        canvas.drawText(footer, 40f, h - 54f, smallText)
     }
 
     private fun drawWindArrow(canvas: Canvas, x: Float, y: Float) {
@@ -223,19 +230,15 @@ class GameView(context: Context) : View(context) {
         p.y += p.vy * dt
         p.vx += wind * dt
         p.vy += 640f * dt
-
         if (p.x !in 0f..w || p.y > h || p.y < -40f) {
-            explodeAt(p.x.coerceIn(0f, w), p.y.coerceIn(0f, h))
+            explodeAt(p.x.coerceIn(0f, w), p.y.coerceIn(0f, h), p.weapon)
             return
         }
-
-        val terrainLine = terrain ?: return
         val groundY = terrainHeightAt(p.x)
         if (p.y >= groundY) {
-            explodeAt(p.x, groundY)
+            explodeAt(p.x, groundY, p.weapon)
             return
         }
-
         worms.forEachIndexed { index, worm ->
             if (worm.hp <= 0) return@forEachIndexed
             val wx = worm.x * w
@@ -243,7 +246,7 @@ class GameView(context: Context) : View(context) {
             val dx = p.x - wx
             val dy = p.y - wy
             if (dx * dx + dy * dy <= 34f * 34f) {
-                explodeAt(p.x, p.y)
+                explodeAt(p.x, p.y, p.weapon)
                 return
             }
         }
@@ -258,12 +261,11 @@ class GameView(context: Context) : View(context) {
         }
     }
 
-    private fun explodeAt(x: Float, y: Float) {
-        val blastRadius = 48f
+    private fun explodeAt(x: Float, y: Float, weapon: Weapon) {
         projectile = null
-        explosion = Explosion(x, y, blastRadius)
-        carveTerrain(x, y, blastRadius)
-        damageWorms(x, y, blastRadius)
+        explosion = Explosion(x, y, weapon.radius)
+        carveTerrain(x, y, weapon.radius)
+        damageWorms(x, y, weapon.radius, weapon.maxDamage)
     }
 
     private fun carveTerrain(x: Float, y: Float, radius: Float) {
@@ -274,22 +276,22 @@ class GameView(context: Context) : View(context) {
             val dx = ix - x
             val inside = radius * radius - dx * dx
             if (inside <= 0f) continue
-            val cutDepth = kotlin.math.sqrt(inside)
+            val cutDepth = sqrt(inside)
             val newTop = y + cutDepth
             if (newTop > terrainLine[ix]) terrainLine[ix] = newTop
         }
         snapWormsToTerrain(width.toFloat().coerceAtLeast(1f))
     }
 
-    private fun damageWorms(x: Float, y: Float, radius: Float) {
+    private fun damageWorms(x: Float, y: Float, radius: Float, maxDamage: Int) {
         val w = width.toFloat().coerceAtLeast(1f)
         worms.forEachIndexed { index, worm ->
             if (worm.hp <= 0) return@forEachIndexed
             val wx = worm.x * w
             val wy = wormY(index, w)
-            val distance = kotlin.math.sqrt((wx - x) * (wx - x) + (wy - y) * (wy - y))
+            val distance = sqrt((wx - x) * (wx - x) + (wy - y) * (wy - y))
             if (distance <= radius * 1.25f) {
-                val damage = ((1f - distance / (radius * 1.25f)) * 55f).toInt().coerceAtLeast(8)
+                val damage = ((1f - distance / (radius * 1.25f)) * maxDamage).toInt().coerceAtLeast(6)
                 worm.hp = (worm.hp - damage).coerceAtLeast(0)
             }
         }
@@ -310,22 +312,20 @@ class GameView(context: Context) : View(context) {
         power = 0.6f
         wind = randomWind()
         turnStartMs = System.currentTimeMillis()
+        worms[activePlayer].jumpsLeft = 1
         invalidate()
     }
 
     private fun snapWormsToTerrain(w: Float) {
         worms.forEachIndexed { index, worm ->
             if (worm.hp <= 0) return@forEachIndexed
-            val xPx = worm.x * w
-            val y = terrainHeightAt(xPx) - 26f
-            worm.yOffset = y
+            worm.yOffset = terrainHeightAt(worm.x * w) - 26f
         }
     }
 
     private fun terrainHeightAt(x: Float): Float {
         val terrainLine = terrain ?: return height * 0.72f
-        val i = x.toInt().coerceIn(0, terrainLine.lastIndex)
-        return terrainLine[i]
+        return terrainLine[x.toInt().coerceIn(0, terrainLine.lastIndex)]
     }
 
     private fun wormY(index: Int, w: Float): Float {
@@ -344,8 +344,12 @@ class GameView(context: Context) : View(context) {
         val xRatio = event.x / width.coerceAtLeast(1)
         val yRatio = event.y / height.coerceAtLeast(1)
         when {
-            yRatio < 0.25f -> power = (power + 0.1f).coerceAtMost(1f)
-            yRatio > 0.75f -> power = (power - 0.1f).coerceAtLeast(0.1f)
+            yRatio < 0.20f && xRatio < 0.5f -> power = (power + 0.1f).coerceAtMost(1f)
+            yRatio < 0.20f && xRatio >= 0.5f -> cycleWeapon()
+            yRatio > 0.78f && xRatio < 0.22f -> moveWorm(-0.018f)
+            yRatio > 0.78f && xRatio < 0.44f -> jumpWorm()
+            yRatio > 0.78f && xRatio > 0.78f -> moveWorm(0.018f)
+            yRatio > 0.55f -> power = (power - 0.1f).coerceAtLeast(0.1f)
             xRatio < 0.33f -> angleDeg = (angleDeg + 5f).coerceAtMost(85f)
             xRatio > 0.66f -> angleDeg = (angleDeg - 5f).coerceAtLeast(5f)
             else -> fire()
@@ -354,32 +358,52 @@ class GameView(context: Context) : View(context) {
         return true
     }
 
+    private fun cycleWeapon() {
+        selectedWeapon = (selectedWeapon + 1) % weapons.size
+    }
+
+    private fun moveWorm(delta: Float) {
+        val worm = worms[activePlayer]
+        worm.x = (worm.x + delta).coerceIn(0.05f, 0.95f)
+        snapWormsToTerrain(width.toFloat().coerceAtLeast(1f))
+    }
+
+    private fun jumpWorm() {
+        val worm = worms[activePlayer]
+        if (worm.jumpsLeft <= 0) return
+        val direction = if (activePlayer == 0) 1f else -1f
+        worm.x = (worm.x + 0.05f * direction).coerceIn(0.05f, 0.95f)
+        worm.jumpsLeft -= 1
+        snapWormsToTerrain(width.toFloat().coerceAtLeast(1f))
+    }
+
     private fun fire() {
         val direction = if (activePlayer == 0) 1f else -1f
+        val weapon = weapons[selectedWeapon]
         val startX = worms[activePlayer].x * width
         val startY = wormY(activePlayer, width.toFloat().coerceAtLeast(1f)) - 16f
         val radians = Math.toRadians(angleDeg.toDouble())
-        val speed = 280f + 520f * power
+        val speed = (280f + 520f * power) * weapon.speedFactor
         projectile = Projectile(
             x = startX,
             y = startY,
             vx = (cos(radians) * speed * direction).toFloat(),
-            vy = (-sin(radians) * speed).toFloat()
+            vy = (-sin(radians) * speed).toFloat(),
+            weapon = weapon
         )
         lastTimeNanos = System.nanoTime()
         invalidate()
     }
 
     private fun restart() {
-        worms[0].hp = 100
-        worms[1].hp = 100
-        worms[0].x = 0.18f
-        worms[1].x = 0.82f
+        worms[0] = Worm(0.18f, hp = 100)
+        worms[1] = Worm(0.82f, hp = 100)
         winner = null
         projectile = null
         explosion = null
         terrain = null
         activePlayer = 0
+        selectedWeapon = 0
         angleDeg = 45f
         power = 0.6f
         wind = randomWind()
