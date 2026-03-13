@@ -296,42 +296,42 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawHud(canvas: Canvas, w: Float, h: Float) {
-        val box = RectF(20f, 20f, w - 20f, 202f)
-        canvas.drawRoundRect(box, 18f, 18f, hud)
-        canvas.drawRoundRect(box, 18f, 18f, hudBorder)
-        val turn = if (activePlayer == 0) "Orange" else if (gameMode == GameMode.PVE) "AI" else "Green"
+        val box = RectF(14f, 14f, w - 14f, 126f)
+        canvas.drawRoundRect(box, 14f, 14f, hud)
+        canvas.drawRoundRect(box, 14f, 14f, hudBorder)
+        val turn = if (activePlayer == 0) "P1" else if (gameMode == GameMode.PVE) "AI" else "P2"
         val leftMs = max(0, turnDurationMs - (System.currentTimeMillis() - turnStartMs))
         val seconds = leftMs / 1000 + 1
         legacyWorm?.let {
-            val dest = RectF(28f, 34f, 82f, 88f)
+            val dest = RectF(20f, 24f, 56f, 60f)
             canvas.drawBitmap(it, null, dest, null)
         }
-        canvas.drawText("Turn: $turn", 96f, 58f, text)
-        canvas.drawText("Time: ${seconds}s", w * 0.80f, 58f, text)
+        canvas.drawText("$turn", 64f, 46f, smallText)
+        canvas.drawText("T:${seconds}s", 120f, 46f, smallText)
+        canvas.drawText("A:${angleDeg.toInt()}°", 200f, 46f, smallText)
+        canvas.drawText("P:${(power * 100).toInt()}%", 300f, 46f, smallText)
+        canvas.drawText("J:${worms[activePlayer].jumpsLeft}", 420f, 46f, smallText)
         drawHealthBars(canvas, w)
+        drawCompactWindMeter(canvas, w)
         drawWeaponStrip(canvas, w)
-        canvas.drawText("Angle: ${angleDeg.toInt()}°", 40f, 148f, text)
-        canvas.drawText("Power: ${(power * 100).toInt()}%", w * 0.32f, 148f, text)
-        canvas.drawText("Jumps: ${worms[activePlayer].jumpsLeft}", w * 0.76f, 100f, text)
-        drawWindMeter(canvas, w)
         val footer = winner?.let {
             when {
                 gameMode == GameMode.PVE && it == 1 -> "AI wins — tap to restart"
-                it == 0 -> "Orange wins — tap to restart"
-                else -> "Green wins — tap to restart"
+                it == 0 -> "P1 wins — tap to restart"
+                else -> "P2 wins — tap to restart"
             }
         } ?: if (gameMode == GameMode.PVE && activePlayer == 1) {
-            "AI is aiming..."
+            "AI aiming..."
         } else {
-            "Top: power/weapon   Middle: aim/fire   Bottom: move/jump"
+            "Top: power/weapon  Mid: aim/fire  Bottom: move/jump"
         }
-        canvas.drawText(footer, 40f, h - 54f, smallText)
+        canvas.drawText(footer, 20f, h - 40f, smallText)
     }
 
     private fun drawHealthBars(canvas: Canvas, w: Float) {
-        drawSingleHealthBar(canvas, 96f, 70f, w * 0.26f, worms[0].hp, "P1")
+        drawSingleHealthBar(canvas, 20f, 58f, w * 0.22f, worms[0].hp, "P1")
         val p2Label = if (gameMode == GameMode.PVE) "AI" else "P2"
-        drawSingleHealthBar(canvas, w * 0.55f, 70f, w * 0.26f, worms[1].hp, p2Label)
+        drawSingleHealthBar(canvas, w * 0.26f, 58f, w * 0.22f, worms[1].hp, p2Label)
     }
 
     private fun drawSingleHealthBar(canvas: Canvas, x: Float, y: Float, width: Float, hp: Int, label: String) {
@@ -344,12 +344,12 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawWeaponStrip(canvas: Canvas, w: Float) {
-        val startX = 40f
-        val y = 100f
-        val itemW = min(150f, (w - 360f) / weapons.size.coerceAtLeast(1))
+        val startX = w * 0.52f
+        val y = 58f
+        val itemW = min(112f, (w - startX - 24f) / weapons.size.coerceAtLeast(1))
         weapons.forEachIndexed { index, weapon ->
             val left = startX + index * (itemW + 12f)
-            val rect = RectF(left, y, left + itemW, y + 34f)
+            val rect = RectF(left, y, left + itemW, y + 28f)
             val bg = if (index == selectedWeapon) selectBar else hud
             canvas.drawRoundRect(rect, 10f, 10f, bg)
             if (index == selectedWeapon) {
@@ -357,28 +357,27 @@ class GameView(context: Context) : View(context) {
             }
             canvas.drawRoundRect(rect, 10f, 10f, hudBorder)
 
-            val iconRect = RectF(left + 6f, y + 5f, left + 30f, y + 29f)
+            val iconRect = RectF(left + 4f, y + 4f, left + 24f, y + 24f)
             when (index) {
                 0 -> legacyTileA?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawOval(iconRect, projectilePaint)
                 1 -> legacyTileB?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawRect(iconRect, projectilePaint)
                 else -> legacyTileC?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawCircle(iconRect.centerX(), iconRect.centerY(), 10f, projectilePaint)
             }
             canvas.drawRoundRect(iconRect, 6f, 6f, hudBorder)
-            canvas.drawText(weapon.name, left + 38f, y + 24f, smallText)
+            canvas.drawText(weapon.name, left + 28f, y + 19f, smallText)
         }
     }
 
-    private fun drawWindMeter(canvas: Canvas, w: Float) {
-        val x = w * 0.58f
-        val y = 138f
-        val width = w * 0.16f
-        val outer = RectF(x, y, x + width, y + 16f)
-        canvas.drawRoundRect(outer, 8f, 8f, windBarBg)
-        canvas.drawRoundRect(outer, 8f, 8f, hudBorder)
+    private fun drawCompactWindMeter(canvas: Canvas, w: Float) {
+        val x = w * 0.26f
+        val y = 92f
+        val width = w * 0.20f
+        val outer = RectF(x, y, x + width, y + 14f)
+        canvas.drawRoundRect(outer, 7f, 7f, windBarBg)
+        canvas.drawRoundRect(outer, 7f, 7f, hudBorder)
         val normalized = ((wind + 40f) / 80f).coerceIn(0f, 1f)
-        canvas.drawRoundRect(RectF(x + 2f, y + 2f, x + 2f + (width - 4f) * normalized, y + 14f), 6f, 6f, windBarFill)
-        canvas.drawText("Wind ${"%+.1f".format(wind / 14f)}", x, y - 6f, smallText)
-        drawWindArrow(canvas, x + width + 18f, y + 8f)
+        canvas.drawRoundRect(RectF(x + 2f, y + 2f, x + 2f + (width - 4f) * normalized, y + 12f), 5f, 5f, windBarFill)
+        canvas.drawText("W ${"%+.1f".format(wind / 14f)}", x + width + 12f, y + 12f, smallText)
     }
 
     private fun drawWindArrow(canvas: Canvas, x: Float, y: Float) {
