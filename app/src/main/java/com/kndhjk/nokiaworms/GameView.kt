@@ -26,6 +26,7 @@ class GameView(context: Context) : View(context) {
     private val legacyWorm = loadBitmap("legacy/icon.png")
     private val legacyTileA = loadBitmap("legacy/mgc27804.png")
     private val legacyTileB = loadBitmap("legacy/mgc30403.png")
+    private val legacyTileC = loadBitmap("legacy/mgc31222.png")
 
     private val sky = Paint().apply { color = Color.rgb(139, 197, 255) }
     private val mountainBack = Paint().apply { color = Color.rgb(156, 190, 118) }
@@ -34,6 +35,7 @@ class GameView(context: Context) : View(context) {
     private val grass = Paint().apply { color = Color.rgb(95, 160, 66) }
     private val tilePaintA = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tilePaintB = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val iconTilePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         textSize = 72f
@@ -123,6 +125,7 @@ class GameView(context: Context) : View(context) {
     init {
         if (legacyTileA != null) tilePaintA.shader = BitmapShader(legacyTileA, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
         if (legacyTileB != null) tilePaintB.shader = BitmapShader(legacyTileB, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        if (legacyTileC != null) iconTilePaint.shader = BitmapShader(legacyTileC, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -240,6 +243,7 @@ class GameView(context: Context) : View(context) {
         val row1 = RectF(w * 0.20f, h * 0.53f, w * 0.80f, h * 0.61f)
         val row2 = RectF(w * 0.20f, h * 0.63f, w * 0.80f, h * 0.71f)
         canvas.drawRoundRect(row1, 12f, 12f, selectBar)
+        iconTilePaint.shader?.let { canvas.drawRoundRect(row1, 12f, 12f, iconTilePaint) }
         canvas.drawRoundRect(row1, 12f, 12f, hudBorder)
         canvas.drawRoundRect(row2, 12f, 12f, hud)
         canvas.drawRoundRect(row2, 12f, 12f, hudBorder)
@@ -341,15 +345,26 @@ class GameView(context: Context) : View(context) {
 
     private fun drawWeaponStrip(canvas: Canvas, w: Float) {
         val startX = 40f
-        val y = 102f
+        val y = 100f
         val itemW = min(150f, (w - 360f) / weapons.size.coerceAtLeast(1))
         weapons.forEachIndexed { index, weapon ->
             val left = startX + index * (itemW + 12f)
-            val rect = RectF(left, y, left + itemW, y + 28f)
+            val rect = RectF(left, y, left + itemW, y + 34f)
             val bg = if (index == selectedWeapon) selectBar else hud
             canvas.drawRoundRect(rect, 10f, 10f, bg)
+            if (index == selectedWeapon) {
+                iconTilePaint.shader?.let { canvas.drawRoundRect(rect, 10f, 10f, iconTilePaint) }
+            }
             canvas.drawRoundRect(rect, 10f, 10f, hudBorder)
-            canvas.drawText(weapon.name, left + 12f, y + 21f, smallText)
+
+            val iconRect = RectF(left + 6f, y + 5f, left + 30f, y + 29f)
+            when (index) {
+                0 -> legacyTileA?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawOval(iconRect, projectilePaint)
+                1 -> legacyTileB?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawRect(iconRect, projectilePaint)
+                else -> legacyTileC?.let { canvas.drawBitmap(it, null, iconRect, null) } ?: canvas.drawCircle(iconRect.centerX(), iconRect.centerY(), 10f, projectilePaint)
+            }
+            canvas.drawRoundRect(iconRect, 6f, 6f, hudBorder)
+            canvas.drawText(weapon.name, left + 38f, y + 24f, smallText)
         }
     }
 
