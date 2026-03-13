@@ -219,6 +219,10 @@ class GameView(context: Context) : View(context) {
             val dest = RectF(w * 0.18f, h * 0.18f, w * 0.82f, h * 0.48f)
             canvas.drawBitmap(it, null, dest, null)
         } ?: canvas.drawText("Nokia Worms", w / 2f, h * 0.32f, titlePaint)
+        legacyWorm?.let {
+            canvas.drawBitmap(it, null, RectF(w * 0.20f, h * 0.50f, w * 0.30f, h * 0.62f), null)
+            canvas.drawBitmap(it, null, RectF(w * 0.70f, h * 0.50f, w * 0.80f, h * 0.62f), null)
+        }
         canvas.drawText("Tap upper half: 1 Player vs AI", w / 2f, h * 0.58f, text)
         canvas.drawText("Tap lower half: 2 Players", w / 2f, h * 0.68f, text)
         canvas.drawText("Legacy graphics imported from your Java ME repo", w / 2f, h * 0.77f, subtitlePaint)
@@ -272,7 +276,11 @@ class GameView(context: Context) : View(context) {
         val turn = if (activePlayer == 0) "Orange" else if (gameMode == GameMode.PVE) "AI" else "Green"
         val leftMs = max(0, turnDurationMs - (System.currentTimeMillis() - turnStartMs))
         val seconds = leftMs / 1000 + 1
-        canvas.drawText("Turn: $turn", 40f, 58f, text)
+        legacyWorm?.let {
+            val dest = RectF(28f, 34f, 82f, 88f)
+            canvas.drawBitmap(it, null, dest, null)
+        }
+        canvas.drawText("Turn: $turn", 96f, 58f, text)
         canvas.drawText("Weapon: ${weapons[selectedWeapon].name}", 40f, 98f, text)
         canvas.drawText("Angle: ${angleDeg.toInt()}°", 40f, 138f, text)
         canvas.drawText("Power: ${(power * 100).toInt()}%", w * 0.32f, 138f, text)
