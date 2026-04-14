@@ -1,44 +1,70 @@
 # Nokia Worms Android
 
-A fresh Android project that starts recreating the classic Nokia-era Worms feel, using the legacy Java ME repository `kndhjk/worms-for-javame` as reference material.
+> A fresh Android project recreating the classic Nokia-era Worms feel, using legacy Java ME assets as reference.
 
-## What is included
+## Overview
 
-- Android app module in Kotlin
-- Simple landscape prototype with two worms
-- Turn-based firing
-- Adjustable angle and power with touch controls
-- Legacy assets copied into `app/src/main/assets/legacy/`
+This is an early-stage Android port of the classic Nokia Worms game. It draws from the legacy Java ME repository `kndhjk/worms-for-javame` for sprite sheets, terrain tiles, and game logic inspiration.
 
-## Touch controls
+## Features
 
-- Tap left side: increase angle
-- Tap right side: decrease angle
-- Tap top: increase power
-- Tap bottom: decrease power
-- Tap center: fire
+- **Two-player local**: PvP (two humans) and PvE (vs. AI opponent)
+- **Turn-based artillery combat**: aim with an angle/power HUD, fire projectiles
+- **Touch controls**:
+  - Left oval: move worm left/right
+  - Top-right oval: jump
+  - Bottom-right oval: cycle weapon
+  - Drag zone: aim and charge shot (hold longer = more power)
+  - Tap center (title): start game
+  - Tap center (game over): restart
+- **Three weapons**: Bazooka, Grenade, Missile — each with different speed, blast radius, and damage
+- **Destructible terrain**: explosions carve craters into the hill
+- **Wind system**: random wind per turn affects projectile arcs
+- **Turn timer**: 20-second countdown per turn
+- **Fall damage**: worms take HP damage from high drops
+- **Legacy graphics**: PNG tiles and sprites imported from the Java ME source
 
-## Legacy source/material
+## Project Structure
 
-Reference repo inspected:
-- `git@github.com:kndhjk/worms-for-javame.git`
-
-Legacy PNG/text/data files copied for future extraction and adaptation.
-
-## Next steps
-
-1. Replace placeholder rendering with extracted sprite sheets
-2. Port terrain generation and weapon logic from Java ME source
-3. Add destructible terrain
-4. Add turn timer, wind, and multiple weapons
-5. Add sound effects and title/menu flow
-
-## Build
-
-Typical build command:
-
-```bash
-./gradlew assembleDebug
+```
+app/src/main/
+  java/com/kndhjk/nokiaworms/
+    MainActivity.kt      # Minimal Android entry point
+    GameView.kt          # All game logic, rendering, and touch handling
+  assets/legacy/         # Copied legacy PNG assets (sprite sheets, tiles)
 ```
 
-If Gradle wrapper is missing, generate it with a compatible Gradle installation.
+## Building
+
+```bash
+# Debug APK
+./gradlew assembleDebug
+
+# Release APK (requires signing config)
+./gradlew assembleRelease
+```
+
+If the Gradle wrapper is missing, generate it with a system Gradle installation:
+
+```bash
+gradle wrapper --gradle-version=8.4
+```
+
+## Legacy Reference
+
+- Source repo: [kndhjk/worms-for-javame](https://github.com/kndhjk/worms-for-javame)
+- Legacy PNG/text/data files copied under `app/src/main/assets/legacy/`
+
+## Next Steps
+
+- [ ] Replace placeholder worm rendering with extracted sprite sheets
+- [ ] Port terrain generation and weapon logic from Java ME source
+- [ ] Add sound effects and title/menu flow
+- [ ] Add multiple weapons beyond the three currently stubbed
+- [ ] Expand AI with better pathfinding and weapon selection
+- [ ] Add wind direction/strength indicators on-screen
+- [ ] Implement save/load game state
+
+## License
+
+MIT — see [LICENSE](LICENSE).

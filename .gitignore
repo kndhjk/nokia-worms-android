@@ -1,7 +1,35 @@
-.gradle/
+# Built files
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+*.log
+
+# Build intermediates
 build/
+out/
+bin/
+gen/
+.gradle/
+.kotlin/
 local.properties
-app/build/
-*.iml
+
+# IDE
 .idea/
+*.iml
+*.ipr
+*.iws
 .DS_Store
+*.swp
+*.swo
+*~
+
+# Android Studio
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local config (may contain absolute paths)
+local.properties
