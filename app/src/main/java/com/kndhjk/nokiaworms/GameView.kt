@@ -358,18 +358,6 @@ class GameView(context: Context) : View(context) {
             cubicTo(w*.70f,h*.34f,w*.88f,h*.58f,w,h*.50f); lineTo(w,h); lineTo(0f,h); close()
         }
         canvas.drawPath(back,hillBackPaint); canvas.drawPath(front,hillFrontPaint)
-        // Animated clouds
-        val cloudY1=h*0.08f; val cloudY2=h*0.18f
-        for(i in 0..4) {
-            val cx=(i*w*0.23f+(cloudOffset*(0.4f+i*0.1f))%w+w)%w
-            val cy=if(i%2==0) cloudY1 else cloudY2
-            val r=w*0.07f
-            cloudPaints[i%2].let { p ->
-                canvas.drawCircle(cx,cy,r,p); canvas.drawCircle(cx-r*0.7f,cy+r*0.2f,r*0.75f,p)
-                canvas.drawCircle(cx+r*0.65f,cy+r*0.15f,r*0.7f,p); canvas.drawCircle(cx-r*0.3f,cy-r*0.3f,r*0.5f,p)
-                canvas.drawCircle(cx+r*0.35f,cy-r*0.25f,r*0.55f,p)
-            }
-        }
     }
 
     private fun drawTerrain(canvas: Canvas) { terrainBitmap?.let { canvas.drawBitmap(it,0f,0f,null) } }
@@ -486,7 +474,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawAimPreview(canvas: Canvas) {
-        if (winnerTeam!=null||projectiles.isNotEmpty()||explosion!=null||mode==GameMode.TITLE) return
+        if (winnerTeam!=null||explosion!=null||mode==GameMode.TITLE) return
         if (mode==GameMode.PVE && activeTeam()==1) return
         val worm=worms[activeWormIndex]; if(!worm.alive) return
         val dir=if(worm.team==0) 1f else -1f
@@ -500,27 +488,23 @@ class GameView(context: Context) : View(context) {
             x+=vx*0.08f; y+=vy*0.08f; vx+=wind*0.08f; vy+=600f*weapon.gravityScale*0.08f
             if (x!in 0f..width.toFloat()||y!in 0f..height.toFloat()||isTerrainAt(x,y)) break
             val progress=i.toFloat()/30f
-            val alpha=(120*(1f-progress*0.7f)).toInt().coerceIn(15,120)
-            val sz=(4f*(1f-progress*0.6f)).coerceAtLeast(1.5f)
-            val dotPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-                color=Color.argb(alpha,
-                    if(weapon.isTimed) 255 else (weapon.color shr 16 and 0xff),
-                    if(weapon.isTimed) 180 else (weapon.color shr 8 and 0xff),
-                    if(weapon.isTimed) 80 else (weapon.color and 0xff))
-            }
+            val alpha=(220*(1f-progress*0.5f)).toInt().coerceIn(40,220)
+            val sz=(9f*(1f-progress*0.5f)).coerceAtLeast(3f)
+            val dotPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha,255,220,80)}
+            canvas.drawCircle(x,y,sz+2f,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha/2,0,0,0)})
             canvas.drawCircle(x,y,sz,dotPaint)
         }
-        // Blast radius preview at predicted impact point
+        // Blast radius preview at predicted impact point (bright and visible)
         val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(50, weapon.blastColor shr 16 and 0xff, weapon.blastColor shr 8 and 0xff, weapon.blastColor and 0xff)
-            style = Paint.Style.FILL
+            color = Color.argb(80, 255, 200, 80); style = Paint.Style.FILL
         }
         val blastBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(100, weapon.blastColor shr 16 and 0xff, weapon.blastColor shr 8 and 0xff, weapon.blastColor and 0xff)
-            style = Paint.Style.STROKE; strokeWidth = 2f
+            color = Color.argb(220, 255, 255, 80); style = Paint.Style.STROKE; strokeWidth = 3f
         }
         canvas.drawCircle(x, y, weapon.radius, blastPaint)
         canvas.drawCircle(x, y, weapon.radius, blastBorder)
+        canvas.drawText("R:${weapon.radius.roundToInt()}", x, y - weapon.radius - 8f,
+            Paint().apply{color=Color.argb(230,255,255,255);textSize=18f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
         // Label
         canvas.drawText("%.0f".format(weapon.radius), x, y - weapon.radius - 6f,
             Paint().apply{color=Color.argb(180,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
@@ -528,16 +512,19 @@ class GameView(context: Context) : View(context) {
 
     private fun drawProjectile(canvas: Canvas) {
         projectiles.forEach { p ->
-            projectilePaint.color = p.weapon.color
-            // Draw trail
+            val wpnColor = p.weapon.color
+            // Draw trail with bright dots
             p.trail.forEachIndexed { i, (tx,ty) ->
-                val alpha = ((i.toFloat()/p.trail.size)*160).toInt().coerceIn(0,160)
-                projectilePaint.alpha = alpha
-                val sz = wormRadius*(0.15f+i.toFloat()/p.trail.size*0.5f)
-                canvas.drawCircle(tx,ty,sz,projectilePaint)
+                val alpha = ((i.toFloat()/p.trail.size)*220).toInt().coerceIn(20,220)
+                val sz = wormRadius*(0.25f+i.toFloat()/p.trail.size*0.55f)
+                canvas.drawCircle(tx,ty,sz,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha,255,220,80)})
             }
-            projectilePaint.alpha = 255
-            canvas.drawCircle(p.x,p.y,wormRadius*0.40f,projectilePaint)
+            // Main projectile: bright circle with dark outline for visibility
+            val projSize = max(14f, wormRadius * 0.65f)
+            canvas.drawCircle(p.x,p.y,projSize+3f,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=0xFF000000.toInt()})
+            canvas.drawCircle(p.x,p.y,projSize,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=wpnColor})
+            canvas.drawCircle(p.x-projSize*0.25f,p.y-projSize*0.25f,projSize*0.3f,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(180,255,255,255)})
             // Fuse countdown for timed weapons
             if (p.weapon.isTimed && p.timer >= 0f) {
                 val remaining = (p.weapon.fuseSecs - p.timer).coerceAtLeast(0f)
