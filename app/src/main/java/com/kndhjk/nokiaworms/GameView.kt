@@ -181,6 +181,21 @@ class GameView(context: Context) : View(context) {
     private var turnFlashAge = 0f
     // Explosions drawn this frame for ring effect
     private val blastRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    // Weapon cooldown
+    private var lastFireMs = 0L
+    private val fireCooldown get() = when(selectedWeapon) {
+        0->700L; 1->1200L; 2->550L; 3->1500L; 4->900L; 5->1800L; else->800L
+    }
+    private val cooldownRemaining get() = max(0L, fireCooldown - (System.currentTimeMillis()-lastFireMs))
+    // Kill feed
+    private data class KillEntry(val text: String, var age: Float = 0f)
+    private val killFeed = mutableListOf<KillEntry>()
+    // Background decorations
+    private val cloudPaints = listOf(
+        Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(70,255,255,255)},
+        Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(50,240,240,255)}
+    )
+    private var cloudOffset = 0f
 
     private val turnDurationMs get() = 25_000L
     private val wormRadius get() = max(18f, width * 0.026f)
@@ -225,6 +240,7 @@ class GameView(context: Context) : View(context) {
             drawAimPreview(canvas); drawProjectile(canvas)
             drawMuzzleFlash(canvas); drawExplosion(canvas)
             drawHud(canvas, w, h); drawWeaponBar(canvas, w, h); drawControls(canvas, w, h)
+            drawKillFeed(canvas, w)
         }
         // Restore screen shake translate
         canvas.restore()
@@ -309,6 +325,18 @@ class GameView(context: Context) : View(context) {
             cubicTo(w*.70f,h*.34f,w*.88f,h*.58f,w,h*.50f); lineTo(w,h); lineTo(0f,h); close()
         }
         canvas.drawPath(back,hillBackPaint); canvas.drawPath(front,hillFrontPaint)
+        // Animated clouds
+        val cloudY1=h*0.08f; val cloudY2=h*0.18f
+        for(i in 0..4) {
+            val cx=(i*w*0.23f+(cloudOffset*(0.4f+i*0.1f))%w+w)%w
+            val cy=if(i%2==0) cloudY1 else cloudY2
+            val r=w*0.07f
+            cloudPaints[i%2].let { p ->
+                canvas.drawCircle(cx,cy,r,p); canvas.drawCircle(cx-r*0.7f,cy+r*0.2f,r*0.75f,p)
+                canvas.drawCircle(cx+r*0.65f,cy+r*0.15f,r*0.7f,p); canvas.drawCircle(cx-r*0.3f,cy-r*0.3f,r*0.5f,p)
+                canvas.drawCircle(cx+r*0.35f,cy-r*0.25f,r*0.55f,p)
+            }
+        }
     }
 
     private fun drawTerrain(canvas: Canvas) { terrainBitmap?.let { canvas.drawBitmap(it,0f,0f,null) } }
@@ -449,6 +477,20 @@ class GameView(context: Context) : View(context) {
             }
             canvas.drawCircle(x,y,sz,dotPaint)
         }
+        // Blast radius preview at predicted impact point
+        val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(50, weapon.blastColor shr 16 and 0xff, weapon.blastColor shr 8 and 0xff, weapon.blastColor and 0xff)
+            style = Paint.Style.FILL
+        }
+        val blastBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(100, weapon.blastColor shr 16 and 0xff, weapon.blastColor shr 8 and 0xff, weapon.blastColor and 0xff)
+            style = Paint.Style.STROKE; strokeWidth = 2f
+        }
+        canvas.drawCircle(x, y, weapon.radius, blastPaint)
+        canvas.drawCircle(x, y, weapon.radius, blastBorder)
+        // Label
+        canvas.drawText("%.0f".format(weapon.radius), x, y - weapon.radius - 6f,
+            Paint().apply{color=Color.argb(180,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
     }
 
     private fun drawProjectile(canvas: Canvas) {
@@ -537,7 +579,8 @@ class GameView(context: Context) : View(context) {
         canvas.drawText("TURN",68f,36f,hudSubText)
         canvas.drawText(if(active.team==0) "TEAM α" else if(mode==GameMode.PVE) "AI β" else "TEAM β",68f,60f,hudText)
         canvas.drawText("Worm: ${active.name}",68f,82f,hudText)
-        canvas.drawText("⏱ ${secs}s",68f,104f,hudText)
+        canvas.drawText("⏱ ${secs}s",68f,104f,
+            Paint(hudText).apply{color=if(secs<=10) Color.rgb(255,80,80) else Color.WHITE})
         val wpn=weapons[selectedWeapon]
         canvas.drawText("WEAPON",w*0.28f,36f,hudSubText)
         val iconBg=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=wpn.color}
@@ -565,6 +608,25 @@ class GameView(context: Context) : View(context) {
         canvas.drawLine(x+len*dir,y,x+(len-10f)*dir,y-6f,windPaint)
         canvas.drawLine(x+len*dir,y,x+(len-10f)*dir,y+6f,windPaint)
         canvas.drawText("Wind ${"%+.1f".format(wind/18f)}",x-8f,y-12f,hudSubText)
+    }
+
+    // ── Kill feed (top-center) ────────────────────────────────────────────────
+    private fun drawKillFeed(canvas: Canvas, w: Float) {
+        if (killFeed.isEmpty()) return
+        val feedTop = 196f; val lineH = 28f
+        killFeed.forEachIndexed { i, entry ->
+            val alpha = ((1f - entry.age / 4.0f) * 220).toInt().coerceIn(0, 220)
+            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(alpha / 2, 20, 20, 20); style = Paint.Style.FILL
+            }
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(alpha, 255, 220, 160); textSize = 20f
+                textAlign = Paint.Align.CENTER
+            }
+            val y = feedTop + i * lineH
+            canvas.drawRoundRect(RectF(w / 2f - 140f, y - 14f, w / 2f + 140f, y + 10f), 6f, 6f, bgPaint)
+            canvas.drawText(entry.text, w / 2f, y + 4f, textPaint)
+        }
     }
 
     // ── Weapon bar (horizontal strip of all 6 weapons) ────────────────────────
@@ -637,11 +699,28 @@ class GameView(context: Context) : View(context) {
             Paint().apply{color=Color.argb(180,255,255,255);textSize=17f;textAlign=Paint.Align.CENTER})
 
         // ── Right-side control buttons ────────────────────────────────────────
-        // FIRE button — largest, most prominent, warm red
-        canvas.drawRoundRect(fr,18f,18f,fireBtnPaint)
-        canvas.drawRoundRect(fr,18f,18f,fireBtnBorder)
-        canvas.drawText("FIRE",fr.centerX(),fr.centerY()+8f,
-            Paint().apply{color=Color.WHITE;textSize=30f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+        // FIRE button — shows cooldown when cooling down
+        val cooling = cooldownRemaining > 0L
+        val coolFrac = if(cooling) cooldownRemaining.toFloat()/fireCooldown else 0f
+        val fireBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if(cooling) Color.rgb(90,90,90) else Color.rgb(230,80,30); style=Paint.Style.FILL
+        }
+        canvas.drawRoundRect(fr,18f,18f, fireBgPaint)
+        canvas.drawRoundRect(fr,18f,18f, fireBtnBorder)
+        if (cooling) {
+            // Cooldown overlay arc
+            val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(255,160,60); style=Paint.Style.STROKE; strokeWidth=5f
+            }
+            canvas.drawArc(fr.left+8f,fr.top+8f,fr.right-8f,fr.bottom-8f,
+                -90f, 360f*(1f-coolFrac), false, arcPaint)
+            canvas.drawText("%.1fs".format(cooldownRemaining/1000.0),
+                fr.centerX(), fr.centerY()+8f,
+                Paint().apply{color=Color.LTGRAY;textSize=24f;textAlign=Paint.Align.CENTER})
+        } else {
+            canvas.drawText("FIRE",fr.centerX(),fr.centerY()+8f,
+                Paint().apply{color=Color.WHITE;textSize=30f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+        }
 
         // WEAPON button
         canvas.drawRoundRect(wp,14f,14f,panelPaint); canvas.drawRoundRect(wp,14f,14f,panelBorder)
@@ -689,6 +768,11 @@ class GameView(context: Context) : View(context) {
         if (shakeAge>=0f) { shakeAge+=dt; if (shakeAge>0.45f) { shakeAge=-1f; shakeIntensity=0f } }
         // Update turn flash
         if (turnFlashAge>=0f) { turnFlashAge+=dt*2.5f; if (turnFlashAge>=1f) turnFlashAge=-1f }
+        // Tick kill feed
+        killFeed.forEach { it.age += dt }
+        killFeed.removeAll { it.age > 4.0f }
+        // Update clouds
+        cloudOffset += dt * 6f
         // Animate dying worms
         worms.filter{it.deathAge>=0f}.forEach{ it.deathAge=(it.deathAge+dt/0.9f).coerceAtMost(1f) }
         updateMovement(dt); updatePhysics(dt)
@@ -751,11 +835,11 @@ class GameView(context: Context) : View(context) {
         // Timed weapon — count down, explode on fuse regardless of position
         if (p.weapon.isTimed) {
             p.timer+=dt
-            if (p.timer>=p.weapon.fuseSecs) { explode(p.x,p.y,p.weapon); return }
+            if (p.timer>=p.weapon.fuseSecs) { explode(p.x,p.y,p.weapon,p.ownerTeam); return }
         }
         // Out of bounds — explode at edge
         if (p.x<0f||p.x>=width||p.y<-40f||p.y>=height) {
-            explode(p.x.coerceIn(0f,width.toFloat()),p.y.coerceIn(0f,height.toFloat()),p.weapon); return
+            explode(p.x.coerceIn(0f,width.toFloat()),p.y.coerceIn(0f,height.toFloat()),p.weapon,p.ownerTeam); return
         }
         // Terrain collision
         if (isTerrainAt(p.x,p.y)) {
@@ -766,11 +850,11 @@ class GameView(context: Context) : View(context) {
                 p.vx*=0.78f
                 // Push out of terrain
                 p.y=(groundYAtPx(p.x)-wormRadius).coerceAtMost(p.y-2f)
-            } else { explode(p.x,p.y,p.weapon); return }
+            } else { explode(p.x,p.y,p.weapon,p.ownerTeam); return }
         }
         // Hit worm
         val hit=worms.firstOrNull{it.alive && hypot(it.x*width-p.x,it.y-p.y)<wormRadius*1.25f}
-        if (hit!=null) explode(p.x,p.y,p.weapon)
+        if (hit!=null) explode(p.x,p.y,p.weapon,p.ownerTeam)
     }
 
     private fun updateExplosion(exp: Explosion, dt: Float) {
@@ -798,7 +882,7 @@ class GameView(context: Context) : View(context) {
         particles.removeAll { it.life>=it.maxLife }
     }
 
-    private fun explode(x: Float, y: Float, weapon: Weapon) {
+    private fun explode(x: Float, y: Float, weapon: Weapon, ownerTeam: Int = -1) {
         projectiles.removeAll { true }
         explosion=Explosion(x,y,weapon.radius)
         shakeIntensity=1.0f; shakeAge=0f
@@ -818,7 +902,7 @@ class GameView(context: Context) : View(context) {
                 rotSpeed=Random.nextFloat()*360f-180f
             ))
         }
-        carveTerrain(x,y,weapon.radius); damageWorms(x,y,weapon.radius,weapon.damage)
+        carveTerrain(x,y,weapon.radius); damageWorms(x,y,weapon.radius,weapon.damage,ownerTeam)
         terrainDirty=false; rebuildTerrainHeight(); snapAllWormsToGround()
     }
 
@@ -832,7 +916,7 @@ class GameView(context: Context) : View(context) {
         }
     }
 
-    private fun damageWorms(cx: Float, cy: Float, radius: Float, maxDmg: Int) {
+    private fun damageWorms(cx: Float, cy: Float, radius: Float, maxDmg: Int, ownerTeam: Int = -1) {
         worms.filter{it.alive}.forEach { worm ->
             val dist=hypot(worm.x*width-cx, worm.y-cy)
             if (dist<=radius*1.35f) {
@@ -840,6 +924,14 @@ class GameView(context: Context) : View(context) {
                 worm.hp=(worm.hp-dmg).coerceAtLeast(0)
                 if (worm.hp<=0 && worm.alive) {
                     worm.alive=false; worm.deathAge=0f
+                    // Kill feed
+                    val killerTeam=if(ownerTeam>=0) ownerTeam else -1
+                    val msg=when {
+                        killerTeam<0 -> "${worm.name} fell off!"
+                        killerTeam!=worm.team -> "${if(killerTeam==0)"α" else "β"} team eliminated ${worm.name}"
+                        else -> "${worm.name} self-destructed"
+                    }
+                    killFeed.add(KillEntry(msg)); if(killFeed.size>5) killFeed.removeAt(0)
                     // Death burst particles
                     repeat(10) {
                         val bmp=(circles+dirts).random()
@@ -866,6 +958,7 @@ class GameView(context: Context) : View(context) {
         worm.moveLeft=1f; worm.jumpsLeft=1
         angleDeg=if(worm.team==0) 45f else 50f; power=0.62f
         wind=randomWind(); turnStartedMs=System.currentTimeMillis(); aiFireAt=0L
+        lastFireMs=0L  // reset fire cooldown
         turnFlashAge=0f  // trigger turn flash
     }
 
@@ -1065,6 +1158,8 @@ class GameView(context: Context) : View(context) {
             if (next != null) selectedWeapon = next else return
         }
         val wpn=weapons[selectedWeapon]; val dir=if(worm.team==0) 1f else -1f
+        // Check cooldown
+        if (cooldownRemaining > 0L) return
         val rad=Math.toRadians(angleDeg.toDouble())
         val baseX=worm.x*width; val baseY=worm.y-wormRadius
         // Shotgun: fire pellets in a spread
@@ -1089,6 +1184,7 @@ class GameView(context: Context) : View(context) {
                 timer=if(wpn.isTimed) 0f else -1f, bounces=0))
         }
         weaponAmmo[selectedWeapon]--
+        lastFireMs = System.currentTimeMillis()
         // Muzzle flash
         muzzles?.let { mfs ->
             if (mfs.isNotEmpty()) {
