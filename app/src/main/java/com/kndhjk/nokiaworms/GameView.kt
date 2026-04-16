@@ -99,7 +99,9 @@ class GameView(context: Context) : View(context) {
         val damage: Int, val gravityScale: Float, val color: Int, val blastColor: Int,
         val trailParticle: List<Bitmap>?, val blastParticle: List<Bitmap>?,
         val isTimed: Boolean = false, val fuseSecs: Float = 0f,
-        val isBouncy: Boolean = false, val maxBounces: Int = 0
+        val isBouncy: Boolean = false, val maxBounces: Int = 0,
+        val ammo: Int = 8,      // -1 = unlimited
+        val pellets: Int = 1    // shotgun: 5, mortar: 1, etc.
     )
     private data class Worm(
         val team: Int, val name: String, var x: Float, var y: Float = 0f,
@@ -109,7 +111,8 @@ class GameView(context: Context) : View(context) {
         var facing: Dir = Dir.RIGHT,
         var walkFrame: Int = 0,
         var walkTimer: Float = 0f,
-        var deathAge: Float = -1f  // -1 = alive, 0..1 = dying animation
+        var deathAge: Float = -1f,  // -1 = alive, 0..1 = dying animation
+        var hasParachute: Boolean = false, var parachuteOpen: Boolean = false
     )
     private data class Projectile(
         var x: Float, var y: Float, var vx: Float, var vy: Float,
@@ -136,13 +139,14 @@ class GameView(context: Context) : View(context) {
     )
 
     private val weapons = listOf(
-        Weapon("Bazooka",  430f, 34f, 48, 1.00f, Color.rgb(60,  80, 200), Color.rgb(120, 140, 255), traces, sparks),
-        Weapon("Grenade",  360f, 42f, 60, 1.18f, Color.rgb(80, 160,  60), Color.rgb(140, 220, 100), flames, dirts,  isTimed=true, fuseSecs=2.8f, isBouncy=true, maxBounces=2),
-        Weapon("Missile",  520f, 28f, 36, 0.90f, Color.rgb(200, 60,  40), Color.rgb(255, 130,  80), traces, flames),
-        Weapon("Mortar",   300f, 54f, 74, 1.32f, Color.rgb(140, 90,  40), Color.rgb(200, 160,  80), fires,  circles),
-        Weapon("Shotgun",  610f, 18f, 24, 0.76f, Color.rgb(180, 140, 50), Color.rgb(240, 200,  80), sparks, sparks),
-        Weapon("Dynamite", 240f, 62f, 86, 1.45f, Color.rgb(50,  50,  50), Color.rgb(180,  80,  40), flames, circles, isTimed=true, fuseSecs=3.5f)
+        Weapon("Bazooka",  430f, 34f, 48, 1.00f, Color.rgb(60,  80, 200), Color.rgb(120, 140, 255), traces, sparks,        ammo=6),
+        Weapon("Grenade",  360f, 42f, 60, 1.18f, Color.rgb(80, 160,  60), Color.rgb(140, 220, 100), flames, dirts,  isTimed=true, fuseSecs=2.8f, isBouncy=true, maxBounces=2, ammo=5),
+        Weapon("Missile",  520f, 28f, 36, 0.90f, Color.rgb(200, 60,  40), Color.rgb(255, 130,  80), traces, flames,          ammo=4),
+        Weapon("Mortar",   300f, 54f, 74, 1.32f, Color.rgb(140, 90,  40), Color.rgb(200, 160,  80), fires,  circles,         ammo=3),
+        Weapon("Shotgun",  610f, 18f, 24, 0.76f, Color.rgb(180, 140, 50), Color.rgb(240, 200,  80), sparks, sparks,          ammo=4, pellets=5),
+        Weapon("Dynamite", 240f, 62f, 86, 1.45f, Color.rgb(50,  50,  50), Color.rgb(180,  80,  40), flames, circles, isTimed=true, fuseSecs=3.5f, ammo=3)
     )
+    private var weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
 
     private var worms = mutableListOf<Worm>()
     private var activeWormIndex = 0
@@ -154,7 +158,7 @@ class GameView(context: Context) : View(context) {
     private var winnerTeam: Int? = null
     private var lastFrameNanos = System.nanoTime()
     private var turnStartedMs = System.currentTimeMillis()
-    private var projectile: Projectile? = null
+    private var projectiles = mutableListOf<Projectile>()
     private var explosion: Explosion? = null
     private var muzzleFlash: MuzzleFlash? = null
     private var particles = mutableListOf<Particle>()
@@ -196,11 +200,12 @@ class GameView(context: Context) : View(context) {
             Worm(1,"B-1",0.63f), Worm(1,"B-2",0.75f), Worm(1,"B-3",0.86f)
         )
         activeWormIndex = 0; selectedWeapon = 0; angleDeg = 45f; power = 0.62f
-        wind = randomWind(); winnerTeam = null; projectile = null; explosion = null
+        wind = randomWind(); winnerTeam = null; projectiles.clear(); explosion = null
         muzzleFlash = null; particles.clear(); crates.clear()
         lastFrameNanos = System.nanoTime(); turnStartedMs = System.currentTimeMillis()
         aiFireAt = 0L; terrainDirty = true; terrainBitmap = null; terrainCanvas = null
         terrainHeight = IntArray(0); bulletOffset = 0f; frameCount = 0
+        weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -229,7 +234,7 @@ class GameView(context: Context) : View(context) {
             val flashPaint = Paint().apply { color = Color.argb(flashAlpha, 255, 255, 200) }
             canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),flashPaint)
         }
-        if (mode==GameMode.TITLE || projectile!=null || explosion!=null || particles.isNotEmpty() ||
+        if (mode==GameMode.TITLE || projectiles.isNotEmpty() || explosion!=null || particles.isNotEmpty() ||
             winnerTeam!=null || (mode==GameMode.PVE && activeTeam()==1)) invalidate()
     }
 
@@ -369,6 +374,28 @@ class GameView(context: Context) : View(context) {
                 canvas.drawRoundRect(mark,10f,10f,activePaint); canvas.drawRoundRect(mark,10f,10f,panelBorder)
                 canvas.drawText("▶",cx-8f,cy-r*2.0f+bob,bodyText)
             }
+            // Draw parachute when open
+            if (worm.parachuteOpen) {
+                val px=cx; val py=cy+bob-r*2.8f
+                val pCanopy=Path().apply {
+                    moveTo(px,py); cubicTo(px-r*1.4f,py+r*0.3f,px-r*1.8f,py+r*1.0f,px-r*1.6f,py+r*1.4f)
+                    lineTo(px+r*1.6f,py+r*1.4f)
+                    cubicTo(px+r*1.8f,py+r*1.0f,px+r*1.4f,py+r*0.3f,px,py)
+                    close()
+                }
+                val paraPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color=Color.argb(160,255,240,255); style=Paint.Style.FILL
+                }
+                canvas.drawPath(pCanopy,paraPaint)
+                val paraBorder=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color=Color.rgb(200,200,200); style=Paint.Style.STROKE; strokeWidth=1.5f
+                }
+                canvas.drawPath(pCanopy,paraBorder)
+                // Rope lines
+                canvas.drawLine(px-r*0.8f,py+r*1.4f,cx-r*0.4f,cy+bob-r*0.5f,paraBorder)
+                canvas.drawLine(px+r*0.8f,py+r*1.4f,cx+r*0.4f,cy+bob-r*0.5f,paraBorder)
+                canvas.drawLine(px,py+r*1.4f,cx,cy+bob-r*0.5f,paraBorder)
+            }
             drawHpBar(canvas, worm, cx, cy+bob)
         }
     }
@@ -398,7 +425,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawAimPreview(canvas: Canvas) {
-        if (winnerTeam!=null||projectile!=null||explosion!=null||mode==GameMode.TITLE) return
+        if (winnerTeam!=null||projectiles.isNotEmpty()||explosion!=null||mode==GameMode.TITLE) return
         if (mode==GameMode.PVE && activeTeam()==1) return
         val worm=worms[activeWormIndex]; if(!worm.alive) return
         val dir=if(worm.team==0) 1f else -1f
@@ -425,7 +452,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun drawProjectile(canvas: Canvas) {
-        projectile?.let { p ->
+        projectiles.forEach { p ->
             projectilePaint.color = p.weapon.color
             // Draw trail
             p.trail.forEachIndexed { i, (tx,ty) ->
@@ -571,6 +598,17 @@ class GameView(context: Context) : View(context) {
                 Paint(Paint.ANTI_ALIAS_FLAG).apply{
                     color=if(selected) Color.BLACK else Color.rgb(200,200,200); textSize=17f; textAlign=Paint.Align.CENTER
                 })
+            // Ammo dots
+            val maxAmmo=wpn.ammo.coerceAtMost(8)
+            val ammoCount=weaponAmmo[i].coerceIn(0,maxAmmo)
+            val dotR=3.5f; val dotGap=9f; val totalW=(maxAmmo-1)*dotGap
+            val dotX=(left+right)/2f-totalW/2f
+            for(d in 0 until maxAmmo) {
+                val dotPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
+                    color=if(d<ammoCount) Color.rgb(255,200,60) else Color.rgb(60,60,60)
+                }
+                canvas.drawCircle(dotX+d*dotGap, barTop+52f, dotR, dotPaint)
+            }
         }
         // Weapon bar underline
         canvas.drawLine(0f,barBot+2f,w,barBot+2f,
@@ -606,18 +644,21 @@ class GameView(context: Context) : View(context) {
         // Animate dying worms
         worms.filter{it.deathAge>=0f}.forEach{ it.deathAge=(it.deathAge+dt/0.9f).coerceAtMost(1f) }
         updateMovement(dt); updatePhysics(dt)
-        projectile?.let { updateProjectile(it, dt) }
+        // Update projectiles and cull exploded/dead ones
+        val aliveProj = projectiles.toList()
+        projectiles.clear()
+        aliveProj.forEach { updateProjectile(it, dt) }
         explosion?.let { updateExplosion(it, dt) }
         updateMuzzleFlash(dt)
         updateParticles(dt)
-        if (winnerTeam==null && projectile==null && explosion==null) {
+        if (winnerTeam==null && projectiles.isEmpty() && explosion==null) {
             if (System.currentTimeMillis()-turnStartedMs>=turnDurationMs) nextTurn()
             maybeRunAi(); collectCrates()
         }
     }
 
     private fun updateMovement(dt: Float) {
-        if (moveInput==0f||projectile!=null||explosion!=null||winnerTeam!=null) return
+        if (moveInput==0f||projectiles.isNotEmpty()||explosion!=null||winnerTeam!=null) return
         val worm=worms[activeWormIndex]
         if (!worm.alive||worm.moveLeft<=0f) return
         val delta=moveInput*dt*0.12f
@@ -634,16 +675,23 @@ class GameView(context: Context) : View(context) {
         worms.filter{it.alive}.forEach { worm ->
             val targetY=groundYAtPx(worm.x*width)-wormRadius
             if (worm.y<targetY-1f) {
-                val fall=min(targetY-worm.y,dt*250f); worm.y+=fall; worm.fallDistance+=fall
+                val maxFall = if (worm.parachuteOpen) 55f else 250f
+                val fall=min(targetY-worm.y,dt*maxFall)
+                worm.y+=fall; worm.fallDistance+=fall
+                // Parachute: open when falling fast and not yet at ground
+                if (worm.hasParachute && worm.fallDistance > wormRadius*2f && !worm.parachuteOpen) {
+                    worm.parachuteOpen = true
+                }
                 if (worm.y>=targetY-1f) {
                     worm.y=targetY
+                    worm.parachuteOpen = false; worm.hasParachute = false
                     if (worm.fallDistance>36f) {
                         worm.hp=(worm.hp-((worm.fallDistance-36f)/5f).roundToInt()).coerceAtLeast(0)
-                        if(worm.hp<=0) worm.alive=false
+                        if(worm.hp<=0 && worm.alive) { worm.alive=false; worm.deathAge=0f }
                     }
                     worm.fallDistance=0f
                 }
-            } else { worm.y=targetY; worm.fallDistance=0f }
+            } else { worm.y=targetY; worm.fallDistance=0f; worm.parachuteOpen=false }
         }
         evaluateWinner()
     }
@@ -703,7 +751,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun explode(x: Float, y: Float, weapon: Weapon) {
-        projectile=null
+        projectiles.removeAll { true }
         explosion=Explosion(x,y,weapon.radius)
         shakeIntensity=1.0f; shakeAge=0f
         // Spawn particles
@@ -783,7 +831,7 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun maybeRunAi() {
-        if (mode!=GameMode.PVE||activeTeam()!=1||projectile!=null||
+        if (mode!=GameMode.PVE||activeTeam()!=1||projectiles.isNotEmpty()||
             explosion!=null||winnerTeam!=null) return
         val now=System.currentTimeMillis()
         if (aiFireAt==0L) { aiFireAt=now+900L; chooseAiTurn(); return }
@@ -792,12 +840,34 @@ class GameView(context: Context) : View(context) {
 
     private fun chooseAiTurn() {
         val shooter=worms[activeWormIndex]
-        val target=worms.filter{it.alive && it.team!=shooter.team}.minByOrNull{abs(it.x-shooter.x)} ?: return
-        val dx=abs(target.x-shooter.x)*width
-        selectedWeapon=when { dx>width*0.38f->2; dx>width*0.22f->0; else->3 }
-        angleDeg=(28f+dx/width*48f).coerceIn(22f,74f)
-        power=(0.40f+dx/width*0.68f).coerceIn(0.35f,1f)
-        if (Random.nextFloat()<0.20f && shooter.jumpsLeft>0) jumpCurrentWorm()
+        val targets=worms.filter{it.alive && it.team!=shooter.team}
+        if (targets.isEmpty()) return
+        // Pick a random target for unpredictability
+        val target=targets.random()
+        val dx=(target.x-shooter.x)*width
+        val dy=target.y-shooter.y
+        val dist=hypot(dx,dy)
+        // Pick weapon with ammo, prefer appropriate weapon for distance
+        val preferredForDist=when {
+            dist>width*0.40f-> listOf(2,0,5)  // Missile, Bazooka, Dynamite
+            dist>width*0.22f-> listOf(0,1,3)  // Bazooka, Grenade, Mortar
+            dist<width*0.14f-> listOf(4,1,3)  // Shotgun, Grenade, Mortar (close)
+            else-> listOf(3,1,5)               // Mortar, Grenade, Dynamite
+        }
+        selectedWeapon=preferredForDist.firstOrNull{ weaponAmmo[it]>0 }
+            ?: (0 until weapons.size).firstOrNull{ weaponAmmo[it]>0 } ?: 0
+        val wpn=weapons[selectedWeapon]
+        // Lead the target: aim slightly ahead based on wind and distance
+        val windBonus=(wind/42f)*(dist/width)*12f
+        angleDeg=Math.toDegrees(atan2(dy.toDouble(),dx.toDouble().coerceAtLeast(1.0))).toFloat()
+            .coerceIn(8f,84f)+(if(dx<0) 180f else 0f)
+        angleDeg=angleDeg.coerceIn(8f,84f)
+        // Power based on distance and weapon gravity
+        val basePower=(dist/(wpn.speed*0.68f)).coerceIn(0.30f,1.0f)
+        power=(basePower+(Random.nextFloat()-0.5f)*0.10f).coerceIn(0.30f,1.0f)
+        // Small chance to jump/toggle parachute
+        if (Random.nextFloat()<0.18f && shooter.jumpsLeft>0) jumpCurrentWorm()
+        else if (Random.nextFloat()<0.10f && shooter.hasParachute) { shooter.parachuteOpen=!shooter.parachuteOpen }
     }
 
     private fun collectCrates() {
@@ -836,7 +906,7 @@ class GameView(context: Context) : View(context) {
             return true
         }
         if (winnerTeam!=null) { if(event.action==MotionEvent.ACTION_DOWN) mode=GameMode.TITLE; return true }
-        if (projectile!=null||explosion!=null) return true
+        if (projectiles.isNotEmpty()||explosion!=null) return true
         if (mode==GameMode.PVE && activeTeam()==1) return true
         val mp=movePadRect(w,h); val jp=jumpRect(w,h)
         val wp=weaponRect(w,h); val ar=aimRect(w,h); val fr=fireRect(w,h)
@@ -877,20 +947,52 @@ class GameView(context: Context) : View(context) {
 
     private fun jumpCurrentWorm() {
         val worm=worms[activeWormIndex]
-        if (!worm.alive||worm.jumpsLeft<=0) return
-        val dir=if(worm.team==0) 1f else -1f
-        worm.x=(worm.x+0.04f*dir).coerceIn(0.04f,0.96f)
+        if (!worm.alive) return
+        val inAir = worm.y < groundYAtPx(worm.x*width)-wormRadius-2f
+        if (inAir) {
+            // Open parachute if not yet open
+            if (!worm.parachuteOpen && worm.hasParachute) { worm.parachuteOpen = true; return }
+            return
+        }
+        if (worm.jumpsLeft<=0) return
+        worm.x=(worm.x+0.04f*(if(worm.team==0) 1f else -1f)).coerceIn(0.04f,0.96f)
         worm.y-=wormRadius*1.4f; worm.jumpsLeft--; worm.moveLeft=(worm.moveLeft-0.25f).coerceAtLeast(0f)
+        worm.hasParachute=true; worm.parachuteOpen=false
     }
 
     private fun fireCurrentWeapon() {
         val worm=worms[activeWormIndex]; if (!worm.alive) return
+        // Auto-skip weapons with no ammo
+        if (weaponAmmo[selectedWeapon] <= 0) {
+            val next = (selectedWeapon+1 until weapons.size).firstOrNull { weaponAmmo[it] > 0 }
+                ?: (0 until selectedWeapon).firstOrNull { weaponAmmo[it] > 0 }
+            if (next != null) selectedWeapon = next else return
+        }
         val wpn=weapons[selectedWeapon]; val dir=if(worm.team==0) 1f else -1f
         val rad=Math.toRadians(angleDeg.toDouble())
-        projectile=Projectile(worm.x*width,worm.y-wormRadius,
-            (cos(rad)*wpn.speed*power*dir).toFloat(),
-            (-sin(rad)*wpn.speed*power).toFloat(),wpn,worm.team,
-            timer=if(wpn.isTimed) 0f else -1f, bounces=0)
+        val baseX=worm.x*width; val baseY=worm.y-wormRadius
+        // Shotgun: fire pellets in a spread
+        if (wpn.pellets > 1) {
+            for (p in 0 until wpn.pellets) {
+                val spread = (p - wpn.pellets/2f) * 0.10f
+                val pRad = rad + spread.toDouble()
+                val pSpeed = wpn.speed * power
+                projectiles.add(Projectile(baseX, baseY,
+                    (cos(pRad)*pSpeed*dir).toFloat(),
+                    (-sin(pRad)*pSpeed).toFloat(), wpn, worm.team,
+                    timer=if(wpn.isTimed) 0f else -1f, bounces=0))
+            }
+            if (projectiles.isEmpty()) projectiles.add(Projectile(baseX,baseY,
+                (cos(rad)*wpn.speed*power*dir).toFloat(),
+                (-sin(rad)*wpn.speed*power).toFloat(),wpn,worm.team,
+                timer=if(wpn.isTimed) 0f else -1f, bounces=0))
+        } else {
+            projectiles.add(Projectile(baseX,baseY,
+                (cos(rad)*wpn.speed*power*dir).toFloat(),
+                (-sin(rad)*wpn.speed*power).toFloat(),wpn,worm.team,
+                timer=if(wpn.isTimed) 0f else -1f, bounces=0))
+        }
+        weaponAmmo[selectedWeapon]--
         // Muzzle flash
         muzzles?.let { mfs ->
             if (mfs.isNotEmpty()) {
