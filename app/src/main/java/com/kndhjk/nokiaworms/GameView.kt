@@ -1,156 +1,82 @@
 package com.kndhjk.nokiaworms
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Bitmap.Config
-import android.graphics.BitmapFactory
-import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Shader
-import android.graphics.Typeface
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.os.VibrationEffect
 import android.os.Vibrator
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sin
-import kotlin.random.Random
+import kotlin.math.roundToInt
+import kotlin.math.atan2
 
 class GameView(context: Context) : View(context) {
-    // ── Asset bitmaps ─────────────────────────────────────────────────────────
-    private val wormSprite  = loadBitmap("legacy/icon.png")
-    private val logoImg     = loadBitmap("legacy/mgilog.png")
-    private val titleImg    = loadBitmap("legacy/mgi24171.png")
-    private val tileGrass   = loadBitmap("legacy/mgc27804.png")
-    private val tileDirtA    = loadBitmap("legacy/mgc30403.png")
-    private val bulletImg   = loadBitmap("legacy/bullet.png")
-    private val logoSmall    = loadBitmap("legacy/mgi27282.png")
 
-    // ── Particle bitmaps ─────────────────────────────────────────────────────
-    private val circles = loadParticleSet("legacy/particles/circle_0%d.png", 1, 5)
-    private val dirts   = loadParticleSet("legacy/particles/dirt_0%d.png", 1, 3)
-    private val sparks  = loadParticleSet("legacy/particles/spark_0%d.png", 1, 7)
-    private val flames  = loadParticleSet("legacy/particles/flame_0%d.png", 1, 6)
-    private val fires   = loadParticleSet("legacy/particles/fire_0%d.png", 1, 2)
-    private val muzzles = loadParticleSet("legacy/particles/muzzle_0%d.png", 1, 5)
-    private val traces  = loadParticleSet("legacy/particles/trace_0%d.png", 1, 7)
+    enum class GameMode { TITLE, SELECT_WORM, PVP, PVE, GAME_OVER }
 
-    // ── Tiling paints ────────────────────────────────────────────────────────
-    private val tileGrassPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        tileGrass?.let { shader = BitmapShader(it, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
-    }
-    private val tileDirtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        tileDirtA?.let { shader = BitmapShader(it, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
-    }
-
-    // ── Color paints ────────────────────────────────────────────────────────
-    private val skyPaint      = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 196, 255) }
-    private val skyGradPaint  = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val hillBackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(130, 167, 101) }
-    private val hillFrontPaint= Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(95, 140, 72) }
-    private val terrainPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(92, 64, 38) }
-    private val grassPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(99, 173, 71) }
-    private val panelPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(225, 255, 255, 255) }
-    private val panelBorder   = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 3f
-    }
-    private val activePaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(140, 255, 220, 100) }
-    private val aimPaint      = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(120, 0, 0, 0) }
-    private val projectilePaint=Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private val hpBgPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(65, 65, 65) }
-    private val hpGoodPaint   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(101, 220, 111) }
-    private val hpBadPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 110, 110) }
-    private val windPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(80, 125, 230); strokeWidth = 5f
-    }
-    private val cratePaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(181, 129, 60) }
-    private val crateBandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(83, 55, 28) }
-    private val teamAPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 255, 150, 70) }
-    private val teamBPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 80, 225, 110) }
-    private val titleText     = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK; textSize = 66f; textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD
-    }
-    private val bodyText      = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 30f }
-    private val hudText       = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 22f }
-    private val hudSubText    = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(200, 220, 255); textSize = 18f
-    }
-    private val smallText     = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 22f }
-    private val titleSmallText= Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.DKGRAY; textSize = 26f; textAlign = Paint.Align.CENTER
-    }
-
-    // ── Game state ───────────────────────────────────────────────────────────
-    private enum class GameMode { TITLE, PVP, PVE, SELECT_WORM, GAME_OVER }
-    private enum class CrateType { HEALTH, WEAPON }
-    private enum class Dir { LEFT, RIGHT }
-
-    private data class Weapon(
+    data class Weapon(
         val name: String, val speed: Float, val radius: Float,
         val damage: Int, val gravityScale: Float, val color: Int, val blastColor: Int,
-        val trailParticle: List<Bitmap>?, val blastParticle: List<Bitmap>?,
         val isTimed: Boolean = false, val fuseSecs: Float = 0f,
         val isBouncy: Boolean = false, val maxBounces: Int = 0,
-        val ammo: Int = 8,      // -1 = unlimited
-        val pellets: Int = 1    // shotgun: 5, mortar: 1, etc.
+        val ammo: Int = 8, val pellets: Int = 1
     )
-    private data class Worm(
+
+    data class Worm(
         val team: Int, val name: String, var x: Float, var y: Float = 0f,
         var hp: Int = 100, var alive: Boolean = true,
-        var moveLeft: Float = 1f, var jumpsLeft: Int = 1,
+        var moveDir: Float = 1f, var jumpsLeft: Int = 1,
         var fallDistance: Float = 0f,
-        var facing: Dir = Dir.RIGHT,
-        var walkFrame: Int = 0,
-        var walkTimer: Float = 0f,
-        var deathAge: Float = -1f,  // -1 = alive, 0..1 = dying animation
-        var hasParachute: Boolean = false, var parachuteOpen: Boolean = false
+        var facing: Int = 1,
+        var walkFrame: Int = 0, var walkTimer: Float = 0f,
+        var deathAge: Float = -1f,
+        var hasParachute: Boolean = false, var parachuteOpen: Boolean = false,
+        var knockVx: Float = 0f, var knockVy: Float = 0f,
+        var vy: Float = 0f
     )
-    private data class Projectile(
+
+    data class Projectile(
         var x: Float, var y: Float, var vx: Float, var vy: Float,
         val weapon: Weapon, val ownerTeam: Int,
-        var trail: MutableList<Pair<Float,Float>> = mutableListOf(),
+        var trail: MutableList<Pair<Float, Float>> = mutableListOf(),
         var timer: Float = 0f, var bounces: Int = 0
     )
-    private data class Particle(
+
+    data class Particle(
         var x: Float, var y: Float,
         var vx: Float, var vy: Float,
-        val bmp: Bitmap, var life: Float = 0f, var maxLife: Float,
-        var size: Float = 1f, var rot: Float = 0f, var rotSpeed: Float = 0f
+        var life: Float = 0f, val maxLife: Float,
+        var size: Float = 1f, var rot: Float = 0f, var rotSpeed: Float = 0f,
+        val color: Int
     )
-    private data class Explosion(
+
+    data class Explosion(
         var x: Float, var y: Float, var radius: Float,
         var age: Float = 0f, val particles: MutableList<Particle> = mutableListOf()
     )
-    private data class SupplyCrate(
-        var x: Float, var y: Float, val type: CrateType, var active: Boolean = true
-    )
-    private data class MuzzleFlash(
-        var x: Float, var y: Float, var angle: Float,
-        val frames: List<Bitmap>, var frame: Int = 0, var age: Float = 0f
-    )
+
+    data class KillEntry(val text: String, var age: Float = 0f)
 
     private val weapons = listOf(
-        Weapon("Bazooka",  430f, 34f, 48, 1.00f, Color.rgb(60,  80, 200), Color.rgb(120, 140, 255), traces, sparks,        ammo=6),
-        Weapon("Grenade",  360f, 42f, 60, 1.18f, Color.rgb(80, 160,  60), Color.rgb(140, 220, 100), flames, dirts,  isTimed=true, fuseSecs=2.8f, isBouncy=true, maxBounces=2, ammo=5),
-        Weapon("Missile",  520f, 28f, 36, 0.90f, Color.rgb(200, 60,  40), Color.rgb(255, 130,  80), traces, flames,          ammo=4),
-        Weapon("Mortar",   300f, 54f, 74, 1.32f, Color.rgb(140, 90,  40), Color.rgb(200, 160,  80), fires,  circles,         ammo=3),
-        Weapon("Shotgun",  610f, 18f, 24, 0.76f, Color.rgb(180, 140, 50), Color.rgb(240, 200,  80), sparks, sparks,          ammo=4, pellets=5),
-        Weapon("Dynamite", 240f, 62f, 86, 1.45f, Color.rgb(50,  50,  50), Color.rgb(180,  80,  40), flames, circles, isTimed=true, fuseSecs=3.5f, ammo=3)
+        Weapon("Bazooka",  430f, 34f, 48, 1.00f, Color.rgb(60,  80, 200), Color.rgb(120, 140, 255), ammo=6),
+        Weapon("Grenade",  360f, 42f, 60, 1.18f, Color.rgb(80, 160,  60), Color.rgb(140, 220, 100), isTimed=true, fuseSecs=2.8f, isBouncy=true, maxBounces=2, ammo=5),
+        Weapon("Missile",  520f, 28f, 36, 0.90f, Color.rgb(200, 60,  40), Color.rgb(255, 130,  80), ammo=4),
+        Weapon("Mortar",   300f, 54f, 74, 1.32f, Color.rgb(140, 90,  40), Color.rgb(200, 160,  80), ammo=3),
+        Weapon("Shotgun",  610f, 18f, 24, 0.76f, Color.rgb(180, 140, 50), Color.rgb(240, 200,  80), ammo=4, pellets=5),
+        Weapon("Dynamite", 240f, 62f, 86, 1.45f, Color.rgb(50,  50,  50), Color.rgb(180,  80,  40), isTimed=true, fuseSecs=3.5f, ammo=3)
     )
-    private var weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
 
+    private var weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
     private var worms = mutableListOf<Worm>()
     private var activeWormIndex = 0
     private var selectedWeapon = 0
@@ -159,48 +85,210 @@ class GameView(context: Context) : View(context) {
     private var wind = 0f
     private var mode = GameMode.TITLE
     private var winnerTeam: Int? = null
-    private var lastFrameNanos = System.nanoTime()
     private var turnStartedMs = System.currentTimeMillis()
     private var projectiles = mutableListOf<Projectile>()
     private var explosion: Explosion? = null
-    private var muzzleFlash: MuzzleFlash? = null
     private var particles = mutableListOf<Particle>()
-    private var crates = mutableListOf<SupplyCrate>()
     private var aiFireAt = 0L
-    private var terrainBitmap: Bitmap? = null
-    private var terrainCanvas: Canvas? = null
-    private var terrainHeight = IntArray(0)
-    private var terrainDirty = true
+    private var lastFrameNanos = System.nanoTime()
     private var moveInput = 0f
-    private var aimActive = false
-    private var charging = false
-    private var chargeStartedMs = 0L
-    private var bulletOffset = 0f
-    private var frameCount = 0
-    // Screen shake
+    private var lastFireMs = 0L
+    private var turnFlashAge = 0f
     private var shakeAge = 0f
     private var shakeIntensity = 0f
-    // Turn transition flash
-    private var turnFlashAge = 0f
-    // Explosions drawn this frame for ring effect
-    private val blastRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    // Weapon cooldown
-    private var lastFireMs = 0L
-    private val fireCooldown get() = when(selectedWeapon) {
-        0->700L; 1->1200L; 2->550L; 3->1500L; 4->900L; 5->1800L; else->800L
-    }
-    private val cooldownRemaining get() = max(0L, fireCooldown - (System.currentTimeMillis()-lastFireMs))
-    // Kill feed
-    private data class KillEntry(val text: String, var age: Float = 0f)
     private val killFeed = mutableListOf<KillEntry>()
-    // Background decorations
-    private val cloudPaints = listOf(
-        Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(70,255,255,255)},
-        Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(50,240,240,255)}
-    )
-    private var cloudOffset = 0f
-    // Haptic feedback
-    private val vibrator: Vibrator? by lazy { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
+    private var selectingTeam = 0
+    private var aiSelectAt = 0L
+    private var joystickId = -2
+    private var aimTouchId = -2
+    private var aimStartX = 0f
+    private var aimStartY = 0f
+    private var joystickCenterX = 0f
+    private var joystickCenterY = 0f
+    private var joystickDeltaX = 0f
+    private var joystickDeltaY = 0f
+    private var wormRadius = 0f
+    private var lastFireAngle = 45f
+    private var lastFirePower = 0.62f
+    private var terrainHeight = mutableListOf<Int>()
+    private var terrainDirty = true
+
+    private val fireCooldown: Long get() = when (selectedWeapon) {
+        0 -> 700L; 1 -> 1200L; 2 -> 550L; 3 -> 1500L; 4 -> 900L; 5 -> 1800L; else -> 800L
+    }
+    private val cooldownRemaining: Long get() = max(0L, fireCooldown - (System.currentTimeMillis() - lastFireMs))
+    private val turnDurationMs = 25_000L
+
+    private val vibrator: Vibrator? by lazy {
+        try { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator } catch (_: Exception) { null }
+    }
+
+    // Paints
+    private val solidPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    init { setupMatch() }
+
+    private fun setupMatch() {
+        worms.clear()
+        listOf("A1","A2","A3").forEachIndexed { i, n -> worms.add(Worm(0, n, 0.12f + i * 0.04f)) }
+        listOf("B1","B2","B3").forEachIndexed { i, n -> worms.add(Worm(1, n, 0.70f + i * 0.04f)) }
+        activeWormIndex = 0
+        selectedWeapon = 0
+        angleDeg = 45f; power = 0.62f
+        projectiles.clear(); explosion = null; particles.clear()
+        killFeed.clear(); winnerTeam = null
+        turnStartedMs = System.currentTimeMillis()
+        terrainDirty = true
+        mode = GameMode.SELECT_WORM
+        selectingTeam = 0
+        aiSelectAt = System.currentTimeMillis() + 1200
+    }
+
+    private fun groundY(team: Int, xFrac: Float): Float {
+        val x = (xFrac * width).coerceIn(0f, (width - 1).toFloat())
+        val base = height * 0.68f
+        val b = sin((x / width) * PI * 1.4).toFloat() * height * 0.08f
+        val m = sin((x / width) * PI * 4.9).toFloat() * height * 0.03f
+        val s = sin((x / width) * PI * 10.4).toFloat() * height * 0.012f
+        return (base + b + m + s).coerceIn(height * 0.42f, height * 0.84f)
+    }
+
+    private fun ensureTerrain() {
+        if (width <= 0 || height <= 0) return
+        if (!terrainDirty) return
+        terrainHeight.clear()
+        for (x in 0 until width) terrainHeight.add(groundY(0, x.toFloat() / width).toInt())
+        terrainDirty = false
+    }
+
+    private fun isTerrainAt(px: Float, py: Float): Boolean {
+        val ix = px.toInt().coerceIn(0, width - 1)
+        val iy = py.toInt().coerceIn(0, height - 1)
+        if (iy < 0 || iy >= terrainHeight.size) return false
+        return iy >= terrainHeight[ix]
+    }
+
+    private fun snapToGround(w: Worm) {
+        val gy = groundY(w.team, w.x)
+        if (w.y < gy) { w.y = gy; w.fallDistance = 0f }
+        w.hasParachute = false; w.parachuteOpen = false; w.vy = 0f
+    }
+
+    private fun activateWorm(idx: Int) {
+        activeWormIndex = idx
+        turnStartedMs = System.currentTimeMillis()
+        turnFlashAge = 0.4f
+        selectedWeapon = 0; angleDeg = 45f; power = 0.62f
+        lastFireMs = 0L; moveInput = 0f
+        joystickDeltaX = 0f; joystickDeltaY = 0f
+        if (worms[idx].team == 1) maybeRunAi()
+    }
+
+    private fun nextTurn() {
+        val current = worms.getOrNull(activeWormIndex) ?: return
+        val currentTeam = current.team
+        for (i in 1 until worms.size) {
+            val idx = (activeWormIndex + i) % worms.size
+            if (worms[idx].team == currentTeam && worms[idx].alive) { activateWorm(idx); return }
+        }
+        val otherTeam = 1 - currentTeam
+        val firstOther = worms.indexOfFirst { it.team == otherTeam && it.alive }
+        if (firstOther != -1) {
+            mode = GameMode.SELECT_WORM; selectingTeam = otherTeam
+            aiSelectAt = System.currentTimeMillis() + 1200
+        } else {
+            evaluateWinner()
+        }
+    }
+
+    private fun selectWormForTeam(team: Int) {
+        val idx = worms.indexOfFirst { it.team == team && it.alive }
+        if (idx != -1) activateWorm(idx)
+    }
+
+    private fun evaluateWinner() {
+        val alive = worms.filter { it.alive }.map { it.team }.distinct()
+        winnerTeam = alive.singleOrNull(); mode = GameMode.GAME_OVER
+    }
+
+    private fun explode(x: Float, y: Float, weapon: Weapon, ownerTeam: Int) {
+        projectiles.removeAll { true }
+        explosion = Explosion(x, y, weapon.radius)
+        shakeIntensity = 1.0f; shakeAge = 0f; doHaptic(80L)
+        repeat(16) {
+            val angle = (Math.random() * PI * 2).toFloat()
+            val speed = 60f + Math.random().toFloat() * 220f
+            val life = 0.3f + Math.random().toFloat() * 0.5f
+            val colors = intArrayOf(Color.rgb(255,200,80), Color.rgb(255,120,40), Color.rgb(255,80,20))
+            explosion!!.particles.add(Particle(x, y, cos(angle)*speed, sin(angle)*speed - 80f,
+                0f, life, wormRadius*(0.5f + Math.random().toFloat()*1.2f),
+                Math.random().toFloat()*360f, Math.random().toFloat()*360f-180f,
+                colors[(Math.random()*3).toInt()]))
+        }
+        // Carve terrain
+        val r = weapon.radius.toInt()
+        for (dx in -r..r) {
+            val px = (x.toInt() + dx).coerceIn(0, width - 1)
+            for (dy in -r..r) {
+                val py = (y.toInt() + dy).coerceIn(0, height - 1)
+                if (dx*dx + dy*dy <= r*r && py < terrainHeight[px]) terrainHeight[px] = py
+            }
+        }
+        terrainDirty = false
+        // Damage
+        worms.filter { it.alive }.forEach { worm ->
+            val dist = hypot(worm.x*width - x, worm.y - y)
+            if (dist <= weapon.radius * 1.35f) {
+                val dmg = ((1f - dist/(weapon.radius*1.35f)) * weapon.damage).roundToInt().coerceAtLeast(6)
+                worm.hp = (worm.hp - dmg).coerceAtLeast(0)
+                if (dist > 1f) {
+                    val dx2 = (worm.x*width - x)/dist; val dy2 = (worm.y - y)/dist
+                    worm.knockVx += dx2 * weapon.radius * 3f * (1f - dist/(weapon.radius*1.35f))
+                    worm.knockVy += dy2 * weapon.radius * 3f * (1f - dist/(weapon.radius*1.35f)) - weapon.radius * 1.5f
+                }
+                if (worm.hp <= 0) { worm.alive = false; worm.deathAge = 0f
+                    val owner = worms.firstOrNull { it.team == ownerTeam }?.name ?: "??"
+                    killFeed.add(0, KillEntry("$owner defeated ${worm.name}", 0f)) }
+            }
+        }
+        if (worms.none { it.alive }) evaluateWinner()
+    }
+
+    private fun fire() {
+        val worm = worms.getOrNull(activeWormIndex) ?: return
+        if (!worm.alive || (mode != GameMode.PVP && mode != GameMode.PVE)) return
+        if (cooldownRemaining > 0) return
+        if (weaponAmmo[selectedWeapon] <= 0) return
+        val wpn = weapons[selectedWeapon]
+        val dir = if (worm.facing == 1) 1f else -1f
+        val rad = Math.toRadians(angleDeg.toDouble())
+        val baseX = worm.x * width; val baseY = worm.y - wormRadius
+        if (wpn.pellets > 1) {
+            for (k in 0 until wpn.pellets) {
+                val spread = (k - wpn.pellets/2f) * 0.10f
+                val pRad = rad + spread
+                val pSpeed = wpn.speed * power
+                projectiles.add(Projectile(baseX, baseY,
+                    (cos(pRad)*pSpeed*dir).toFloat(), (-sin(pRad)*pSpeed).toFloat(), wpn, worm.team))
+            }
+        } else {
+            projectiles.add(Projectile(baseX, baseY,
+                (cos(rad)*wpn.speed*power*dir).toFloat(), (-sin(rad)*wpn.speed*power).toFloat(), wpn, worm.team))
+        }
+        weaponAmmo[selectedWeapon]--; lastFireMs = System.currentTimeMillis()
+        lastFireAngle = angleDeg; lastFirePower = power
+        doHaptic(40L)
+    }
+
+    private fun jump() {
+        val worm = worms.getOrNull(activeWormIndex) ?: return
+        if (!worm.alive || worm.jumpsLeft <= 0) return
+        worm.jumpsLeft--; worm.vy = -height * 0.42f
+        worm.hasParachute = true; worm.parachuteOpen = false; worm.fallDistance = 0f
+    }
+
     private fun doHaptic(durationMs: Long) {
         try {
             vibrator?.let { v ->
@@ -213,1201 +301,551 @@ class GameView(context: Context) : View(context) {
         } catch (_: Exception) { }
     }
 
-    private val turnDurationMs get() = 25_000L
-    // Worm selection
-    private var selectingTeam = 0
-    private var aiSelectAt = 0L
-    private val wormRadius get() = max(18f, width * 0.026f)
-    private val crateSize get() = wormRadius * 1.45f
+    private fun maybeRunAi() {
+        if (mode != GameMode.PVE && mode != GameMode.PVP) return
+        if (activeTeam() != 1) return
+        if (projectiles.isNotEmpty() || explosion != null) return
+        aiFireAt = System.currentTimeMillis() + 800 + (Math.random() * 1200).toLong()
+    }
 
-    init { setupMatch() }
+    private fun runAiFire() {
+        val worm = worms.getOrNull(activeWormIndex) ?: return
+        val target = worms.filter { it.alive && it.team != worm.team }.randomOrNull() ?: return
+        val dx = (target.x - worm.x) * width; val dy = target.y - worm.y
+        val dist = hypot(dx, dy)
+        selectedWeapon = when {
+            dist > 600 -> 0; dist > 350 -> 2; dist < 200 -> 4; else -> 1
+        }
+        val wpn = weapons[selectedWeapon]
+        val absDx = abs(dx)
+        angleDeg = Math.toDegrees(atan2((-dy + wind * absDx / wpn.speed * 0.5f).toDouble(), absDx.toDouble())).toFloat().coerceIn(5f, 85f)
+        power = (dist / (wpn.speed * 0.75f)).coerceIn(0.3f, 1.0f)
+        fire()
+    }
 
-    private fun loadParticleSet(pattern: String, start: Int, end: Int): List<Bitmap> {
-        return (start..end).mapNotNull { i ->
-            loadBitmap(String.format(pattern, i))
+    private fun activeTeam() = worms.getOrNull(activeWormIndex)?.team ?: 0
+
+    private fun updatePhysics(dt: Float) {
+        worms.forEach { worm ->
+            if (!worm.alive) {
+                if (worm.deathAge >= 0f) worm.deathAge = (worm.deathAge + dt).coerceAtMost(1f)
+                return@forEach
+            }
+            worm.x += worm.knockVx * dt; worm.knockVx *= 0.88f
+            worm.vy += 350f * dt
+            worm.vy = worm.vy.coerceAtMost(if (worm.parachuteOpen) height * 0.055f else height * 0.25f)
+            worm.y += worm.vy * dt; worm.knockVy *= 0.95f
+            worm.x = worm.x.coerceIn(0.01f, 0.99f)
+            val ground = groundY(worm.team, worm.x)
+            if (worm.y >= ground) {
+                if (worm.vy > 0) worm.fallDistance += worm.vy * dt
+                worm.y = ground
+                if (worm.fallDistance > height * 0.35f) {
+                    worm.hp = (worm.hp - (worm.fallDistance / height * 60f).toInt()).coerceAtLeast(1)
+                    worm.fallDistance = 0f
+                }
+                if (worm.vy > 0) { worm.vy = 0f; worm.hasParachute = false; worm.parachuteOpen = false }
+            }
+            if (worm.hasParachute && worm.vy > height * 0.1f) worm.parachuteOpen = true
+            if (abs(moveInput) > 0.1f) {
+                worm.walkTimer += dt
+                if (worm.walkTimer > 0.15f) { worm.walkTimer = 0f; worm.walkFrame = (worm.walkFrame + 1) % 4 }
+                worm.x += moveInput * 0.0012f; worm.facing = if (moveInput > 0) 1 else -1
+            }
+            worm.x = worm.x.coerceIn(0.01f, 0.99f)
         }
     }
 
-    private fun setupMatch() {
-        worms = mutableListOf(
-            Worm(0,"A-1",0.15f), Worm(0,"A-2",0.28f), Worm(0,"A-3",0.38f),
-            Worm(1,"B-1",0.63f), Worm(1,"B-2",0.75f), Worm(1,"B-3",0.86f)
-        )
-        activeWormIndex = 0; selectedWeapon = 0; angleDeg = 45f; power = 0.62f
-        wind = randomWind(); winnerTeam = null; projectiles.clear(); explosion = null
-        muzzleFlash = null; particles.clear(); crates.clear(); killFeed.clear()
-        lastFrameNanos = System.nanoTime(); turnStartedMs = System.currentTimeMillis()
-        aiFireAt = 0L; terrainDirty = true; terrainBitmap = null; terrainCanvas = null
-        terrainHeight = IntArray(0); bulletOffset = 0f; frameCount = 0
-        weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
-        mode = GameMode.TITLE
+    private fun updateFrame(dt: Float) {
+        if (turnFlashAge > 0f) turnFlashAge = (turnFlashAge - dt).coerceAtLeast(0f)
+        if (shakeAge >= 0f) { shakeAge += dt; if (shakeAge > 0.45f) { shakeAge = -1f; shakeIntensity = 0f } }
+        else shakeIntensity *= 0.85f
+        killFeed.forEach { it.age += dt }; killFeed.removeAll { it.age > 4f }
+
+        if (mode == GameMode.SELECT_WORM && System.currentTimeMillis() > aiSelectAt) {
+            selectWormForTeam(selectingTeam)
+            mode = if (worms.any { it.team == 1 && it.alive }) GameMode.PVE else GameMode.PVP
+        }
+
+        if ((mode == GameMode.PVE && activeTeam() == 1 || mode == GameMode.PVP && activeTeam() == 1)
+            && projectiles.isEmpty() && explosion == null && System.currentTimeMillis() > aiFireAt) {
+            runAiFire()
+        }
+
+        if ((mode == GameMode.PVP || mode == GameMode.PVE) && projectiles.isEmpty() && explosion == null) {
+            if (System.currentTimeMillis() - turnStartedMs > turnDurationMs) nextTurn()
+        }
+
+        projectiles.forEach { p ->
+            p.trail.add(Pair(p.x, p.y))
+            if (p.trail.size > 16) p.trail.removeAt(0)
+            p.x += p.vx * dt; p.y += p.vy * dt
+            p.vx += wind * dt; p.vy += 600f * p.weapon.gravityScale * dt
+            if (p.weapon.isTimed) { p.timer += dt
+                if (p.timer >= p.weapon.fuseSecs) { explode(p.x, p.y, p.weapon, p.ownerTeam); return@forEach } }
+            if (p.x < 0f || p.x >= width || p.y < -40f || p.y >= height) {
+                explode(p.x.coerceIn(0f, width.toFloat()), p.y.coerceIn(0f, height.toFloat()), p.weapon, p.ownerTeam); return@forEach }
+            if (isTerrainAt(p.x, p.y)) {
+                if (p.weapon.isBouncy && p.bounces < p.weapon.maxBounces) {
+                    p.bounces++; p.vy = -p.vy * 0.42f; p.vx *= 0.78f
+                    p.y = (groundY(worms[activeWormIndex].team, p.x / width) - wormRadius).coerceAtMost(p.y - 2f)
+                } else { explode(p.x, p.y, p.weapon, p.ownerTeam); return@forEach }
+            }
+            val hit = worms.firstOrNull { it.alive && hypot(it.x*width - p.x, it.y - p.y) < wormRadius * 1.25f }
+            if (hit != null) { explode(p.x, p.y, p.weapon, p.ownerTeam) }
+        }
+        projectiles.removeAll { it.x < 0 || it.x >= width || it.y > height }
+
+        explosion?.let { exp ->
+            exp.age += dt
+            exp.particles.forEach { p -> p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 180f * dt; p.life += dt; p.rot += p.rotSpeed * dt }
+            exp.particles.removeAll { it.life >= it.maxLife }
+            if (exp.age >= 0.55f && exp.particles.isEmpty()) explosion = null
+        }
+        particles.forEach { p -> p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 160f * dt; p.life += dt; p.rot += p.rotSpeed * dt }
+        particles.removeAll { it.life >= it.maxLife }
     }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val act = event.actionMasked
+        val px = event.x; val py = event.y
+        val w = width.toFloat(); val h = height.toFloat()
+        val joyR = wormRadius * 2.8f
+        val joyC = RectF(30f, h - joyR * 2 - 30f, 30f + joyR * 2, h - 30f)
+        val fireR = wormRadius * 2.8f
+        val fireCX = w - fireR - 30f; val fireCY = h - fireR - 30f
+        val jumpCX = w - fireR - 30f; val jumpCY = h - fireR * 5.8f
+        val wpCX = w - fireR - 30f; val wpCY = h - fireR * 8.8f
+
+        when (act) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val idx = event.actionIndex; val tid = event.getPointerId(idx)
+                val tx = event.getX(idx); val ty = event.getY(idx)
+                val dx = tx - fireCX; val dy2 = ty - fireCY; val fireDist = hypot(dx, dy2)
+                val jdx = tx - jumpCX; val jdy = ty - jumpCY; val jumpDist = hypot(jdx, jdy)
+                val wdx = tx - wpCX; val wdy = ty - wpCY; val wpDist = hypot(wdx, wdy)
+                when {
+                    fireDist <= fireR -> {
+                        if (mode == GameMode.TITLE) { mode = GameMode.SELECT_WORM; selectingTeam = 0; aiSelectAt = System.currentTimeMillis() + 1200 }
+                        else if (mode == GameMode.GAME_OVER) { setupMatch() }
+                        else if (mode == GameMode.PVP || mode == GameMode.PVE) { angleDeg = lastFireAngle; power = lastFirePower; fire() }
+                    }
+                    jumpDist <= fireR -> { if (mode == GameMode.PVP || mode == GameMode.PVE) jump() }
+                    wpDist <= fireR -> {
+                        if (mode == GameMode.PVP || mode == GameMode.PVE) {
+                            selectedWeapon = (selectedWeapon + 1) % weapons.size
+                            while (weaponAmmo[selectedWeapon] <= 0) selectedWeapon = (selectedWeapon + 1) % weapons.size
+                        }
+                    }
+                    joyC.contains(tx, ty) -> { joystickId = tid; joystickCenterX = joyC.centerX(); joystickCenterY = joyC.centerY() }
+                    else -> { aimTouchId = tid; aimStartX = tx; aimStartY = ty; aimActive = true }
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                for (i in 0 until event.pointerCount) {
+                    val tid = event.getPointerId(i); val tx2 = event.getX(i); val ty2 = event.getY(i)
+                    when (tid) {
+                        joystickId -> {
+                            joystickDeltaX = (tx2 - joystickCenterX).coerceIn(-joyR, joyR)
+                            joystickDeltaY = (ty2 - joystickCenterY).coerceIn(-joyR, joyR)
+                            moveInput = (joystickDeltaX / joyR).coerceIn(-1f, 1f)
+                            if ((mode == GameMode.PVP || mode == GameMode.PVE) && abs(moveInput) > 0.1f) {
+                                worms.getOrNull(activeWormIndex)?.facing = if (moveInput > 0) 1 else -1
+                            }
+                        }
+                        aimTouchId -> {
+                            if (aimActive) {
+                                val adx = tx2 - aimStartX; val ady = ty2 - aimStartY
+                                val worm = worms.getOrNull(activeWormIndex)
+                                val dir = if (worm?.facing == -1) -1f else 1f
+                                angleDeg = (Math.toDegrees(atan2((-ady).toDouble(), (adx * dir).toDouble())) / 90.0 * 90.0).toFloat().coerceIn(5f, 85f)
+                                power = (hypot(adx, ady) / (joyR * 2.5f)).coerceIn(0.1f, 1.0f)
+                            }
+                        }
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                val idx = event.actionIndex; val tid = event.getPointerId(idx)
+                when (tid) {
+                    joystickId -> { joystickId = -2; moveInput = 0f; joystickDeltaX = 0f; joystickDeltaY = 0f }
+                    aimTouchId -> { aimActive = false }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> { joystickId = -2; aimTouchId = -2; moveInput = 0f; aimActive = false }
+        }
+        return true
+    }
+
+    private var aimActive = false
 
     override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val w = width.toFloat().coerceAtLeast(1f)
-        val h = height.toFloat().coerceAtLeast(1f)
-        ensureTerrain(); updateFrame()
-        // Apply screen shake
-        val shakeX = if(shakeAge>=0f) (Random.nextFloat()*2f-1f)*shakeIntensity*14f else 0f
-        val shakeY = if(shakeAge>=0f) (Random.nextFloat()*2f-1f)*shakeIntensity*10f else 0f
-        canvas.save(); canvas.translate(shakeX,shakeY)
-        drawBackground(canvas, w, h); drawTerrain(canvas)
-        if (mode == GameMode.TITLE) drawTitle(canvas, w, h)
-        else if (mode == GameMode.SELECT_WORM) {
-            drawParticles(canvas); drawCrates(canvas); drawWorms(canvas)
-            drawWormSelect(canvas, w, h)
-        }
-        else if (mode == GameMode.GAME_OVER) {
-            drawParticles(canvas); drawCrates(canvas); drawWorms(canvas)
-            drawGameOver(canvas, w, h)
-        }
-        else {
-            drawParticles(canvas)
-            drawCrates(canvas); drawWorms(canvas)
-            drawAimPreview(canvas); drawProjectile(canvas)
-            drawMuzzleFlash(canvas); drawExplosion(canvas)
-            drawHud(canvas, w, h); drawWeaponBar(canvas, w, h); drawControls(canvas, w, h)
-            drawKillFeed(canvas, w)
-        }
-        // Restore screen shake translate
-        canvas.restore()
-        // Turn flash overlay
-        if (turnFlashAge in 0f..0.95f) {
-            val flashAlpha = ((1f-turnFlashAge/0.95f)*140).toInt().coerceIn(0,140)
-            val flashPaint = Paint().apply { color = Color.argb(flashAlpha, 255, 255, 200) }
-            canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),flashPaint)
-        }
-        if (mode==GameMode.TITLE || projectiles.isNotEmpty() || explosion!=null || particles.isNotEmpty() ||
-            winnerTeam!=null || (mode==GameMode.PVE && activeTeam()==1)) invalidate()
-    }
+        wormRadius = max(18f, width * 0.026f)
+        ensureTerrain()
+        val nowNanos = System.nanoTime()
+        val dt = ((nowNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+        lastFrameNanos = nowNanos
+        updateFrame(dt)
+        updatePhysics(dt)
 
-    private fun ensureTerrain() {
-        if (width<=0||height<=0) return
-        if (!terrainDirty && terrainBitmap?.width==width && terrainBitmap?.height==height) return
-        terrainBitmap = Bitmap.createBitmap(width, height, Config.ARGB_8888)
-        terrainCanvas = Canvas(terrainBitmap!!)
-        terrainBitmap?.eraseColor(Color.TRANSPARENT)
-        val canvas = terrainCanvas ?: return
-        val path = Path().apply {
-            moveTo(0f,height.toFloat()); lineTo(0f,sampleTerrainY(0f))
-            for(x in 1 until width) lineTo(x.toFloat(),sampleTerrainY(x.toFloat()))
-            lineTo(width.toFloat(),height.toFloat()); close()
-        }
-        // Draw dirt with vertical gradient (reliable, no tile artifacts)
-        val dirtGrad = android.graphics.LinearGradient(0f, height*0.35f, 0f, height.toFloat(),
-            Color.rgb(120, 82, 48), Color.rgb(72, 48, 28), android.graphics.Shader.TileMode.CLAMP)
-        val dirtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = dirtGrad }
-        canvas.save(); canvas.clipPath(path)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dirtPaint)
-        canvas.restore()
-        // Grass strip on top with gradient
-        val grassGrad = android.graphics.LinearGradient(0f, height*0.30f, 0f, height*0.38f,
-            Color.rgb(110, 180, 75), Color.rgb(80, 140, 50), android.graphics.Shader.TileMode.CLAMP)
-        val grassBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = grassGrad }
-        val gPath = Path().apply {
-            moveTo(0f,sampleTerrainY(0f)-6f)
-            for(x in 1 until width) lineTo(x.toFloat(),sampleTerrainY(x.toFloat())-6f)
-            lineTo(width.toFloat(),height.toFloat()); lineTo(0f,height.toFloat()); close()
-        }
-        canvas.save(); canvas.clipPath(gPath)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), grassBg)
-        canvas.restore()
-        rebuildTerrainHeight(); snapAllWormsToGround(); maybeSpawnCrates()
-        terrainDirty = false
-    }
+        val shakeX = if (shakeAge >= 0f) (Math.random() * 2 - 1).toFloat() * shakeIntensity * 14f else 0f
+        val shakeY = if (shakeAge >= 0f) (Math.random() * 2 - 1).toFloat() * shakeIntensity * 10f else 0f
+        canvas.save(); canvas.translate(shakeX, shakeY)
 
-    private fun sampleTerrainY(x: Float): Float {
-        val xf = x/width.toFloat().coerceAtLeast(1f)
-        val base = height*0.68f
-        val big   = sin(xf*PI*1.4).toFloat()*height*0.080f
-        val med   = sin(xf*PI*4.9).toFloat()*height*0.030f
-        val small = sin(xf*PI*10.4).toFloat()*height*0.012f
-        return (base+big+med+small).coerceIn(height*0.42f, height*0.84f)
-    }
+        drawBackground(canvas)
+        drawTerrain(canvas)
 
-    private fun rebuildTerrainHeight() {
-        val bmp = terrainBitmap ?: return
-        if (terrainHeight.size!=bmp.width) terrainHeight = IntArray(bmp.width)
-        val top = (height*0.25f).toInt()
-        for (x in 0 until bmp.width) {
-            var found = bmp.height-1
-            for (y in top until bmp.height) {
-                if (Color.alpha(bmp.getPixel(x,y))>0) { found=y; break }
+        when (mode) {
+            GameMode.TITLE -> drawTitle(canvas)
+            GameMode.SELECT_WORM -> { drawWorms(canvas); drawWormSelect(canvas) }
+            GameMode.GAME_OVER -> { drawWorms(canvas); drawGameOver(canvas); drawKillFeed(canvas) }
+            GameMode.PVP, GameMode.PVE -> {
+                drawWorms(canvas)
+                if (aimActive || projectiles.isEmpty()) drawAimPreview(canvas)
+                drawProjectiles(canvas)
+                drawExplosion(canvas)
+                drawHud(canvas)
+                drawWeaponBar(canvas)
+                drawControls(canvas)
+                drawKillFeed(canvas)
             }
-            terrainHeight[x]=found
         }
+        canvas.restore()
+        invalidate()
     }
 
-    private fun drawBackground(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRect(0f,0f,w,h, skyPaint)
-        bulletImg?.let {
-            val tileW = it.width.toFloat(); val off = (bulletOffset%tileW).toInt()
-            for (col in -1..((w/tileW).toInt()+2)) canvas.drawBitmap(it,col*tileW-off,0f,null)
-        } ?: run {
-            val grad = android.graphics.LinearGradient(0f,0f,0f,h*0.65f,
-                Color.rgb(126,196,255),Color.rgb(180,230,255), android.graphics.Shader.TileMode.CLAMP)
-            skyGradPaint.shader = grad; canvas.drawRect(0f,0f,w,h*0.65f,skyGradPaint)
+    private fun drawBackground(canvas: Canvas) {
+        solidPaint.shader = android.graphics.LinearGradient(0f, 0f, 0f, height * 0.65f,
+            Color.rgb(126, 196, 255), Color.rgb(180, 230, 255), android.graphics.Shader.TileMode.CLAMP)
+        solidPaint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), solidPaint)
+        solidPaint.shader = null
+
+        solidPaint.color = Color.rgb(80, 140, 60)
+        val backHill = Path().apply {
+            moveTo(0f, height * 0.70f); cubicTo(width*.10f, height*.36f, width*.32f, height*.56f, width*.52f, height*.40f)
+            cubicTo(width*.64f, height*.28f, width*.82f, height*.56f, width.toFloat(), height*.42f)
+            lineTo(width.toFloat(), height.toFloat()); lineTo(0f, height.toFloat()); close()
         }
-        val back = Path().apply {
-            moveTo(0f,h*0.70f); cubicTo(w*.10f,h*.36f,w*.32f,h*.56f,w*.52f,h*.40f)
-            cubicTo(w*.64f,h*.28f,w*.82f,h*.56f,w,h*.42f); lineTo(w,h); lineTo(0f,h); close()
+        canvas.drawPath(backHill, solidPaint)
+        solidPaint.color = Color.rgb(100, 160, 70)
+        val frontHill = Path().apply {
+            moveTo(0f, height * 0.78f); cubicTo(width*.18f, height*.50f, width*.38f, height*.66f, width*.55f, height*.50f)
+            cubicTo(width*.70f, height*.34f, width*.88f, height*.58f, width.toFloat(), height*.50f)
+            lineTo(width.toFloat(), height.toFloat()); lineTo(0f, height.toFloat()); close()
         }
-        val front = Path().apply {
-            moveTo(0f,h*0.78f); cubicTo(w*.18f,h*.50f,w*.38f,h*.66f,w*.55f,h*.50f)
-            cubicTo(w*.70f,h*.34f,w*.88f,h*.58f,w,h*.50f); lineTo(w,h); lineTo(0f,h); close()
-        }
-        canvas.drawPath(back,hillBackPaint); canvas.drawPath(front,hillFrontPaint)
+        canvas.drawPath(frontHill, solidPaint)
     }
 
-    private fun drawTerrain(canvas: Canvas) { terrainBitmap?.let { canvas.drawBitmap(it,0f,0f,null) } }
-
-    private fun drawTitle(canvas: Canvas, w: Float, h: Float) {
-        val panel = RectF(w*0.10f,h*0.14f,w*0.90f,h*0.84f)
-        canvas.drawRoundRect(panel,30f,30f,panelPaint); canvas.drawRoundRect(panel,30f,30f,panelBorder)
-        logoImg?.let { canvas.drawBitmap(it,null,RectF(w*0.18f,h*0.18f,w*0.82f,h*0.46f),null) }
-            ?: canvas.drawText("NOKIA WORMS",w/2f,h*0.32f,titleText)
-        titleImg?.let { canvas.drawBitmap(it,null,RectF(w*0.70f,h*0.06f,w*0.96f,h*0.32f),null) }
-        wormSprite?.let { spr ->
-            val a=RectF(w*0.18f,h*0.49f,w*0.28f,h*0.59f); val b=RectF(w*0.72f,h*0.49f,w*0.82f,h*0.59f)
-            canvas.drawBitmap(spr,null,a,null); canvas.drawBitmap(spr,null,b,null)
-            canvas.drawOval(a,teamAPaint); canvas.drawOval(b,teamBPaint)
+    private fun drawTerrain(canvas: Canvas) {
+        val path = Path().apply {
+            moveTo(0f, height.toFloat())
+            lineTo(0f, terrainHeight.getOrElse(0) { (height * 0.68).toInt() }.toFloat())
+            for (x in 1 until width) lineTo(x.toFloat(), terrainHeight.getOrElse(x) { (height * 0.68).toInt() }.toFloat())
+            lineTo(width.toFloat(), height.toFloat()); close()
         }
-        val pve=RectF(w*0.20f,h*0.53f,w*0.80f,h*0.61f)
-        val pvp=RectF(w*0.20f,h*0.64f,w*0.80f,h*0.72f)
-        canvas.drawRoundRect(pve,16f,16f,activePaint); canvas.drawRoundRect(pvp,16f,16f,panelPaint)
-        canvas.drawRoundRect(pve,16f,16f,panelBorder); canvas.drawRoundRect(pvp,16f,16f,panelBorder)
-        canvas.drawText("1 Player vs AI",w/2f,h*0.595f,bodyText)
-        canvas.drawText("2 Players",w/2f,h*0.705f,bodyText)
-        canvas.drawText("Classic Worms · Multi-worm · 6 Weapons · Particle FX",w/2f,h*0.80f,titleSmallText)
+        solidPaint.shader = android.graphics.LinearGradient(0f, height * 0.35f, 0f, height.toFloat(),
+            Color.rgb(120, 82, 48), Color.rgb(72, 48, 28), android.graphics.Shader.TileMode.CLAMP)
+        solidPaint.style = Paint.Style.FILL
+        canvas.drawPath(path, solidPaint)
+        solidPaint.shader = null
+
+        solidPaint.color = Color.rgb(70, 140, 45)
+        solidPaint.style = Paint.Style.FILL
+        val grassPath = Path().apply {
+            moveTo(0f, terrainHeight.getOrElse(0) { (height * 0.68).toInt() }.toFloat())
+            for (x in 1 until width) lineTo(x.toFloat(), terrainHeight.getOrElse(x) { (height * 0.68).toInt() }.toFloat())
+            lineTo(width.toFloat(), height.toFloat()); lineTo(0f, height.toFloat()); close()
+        }
+        canvas.drawPath(grassPath, solidPaint)
     }
 
     private fun drawWorms(canvas: Canvas) {
-        worms.forEachIndexed { index, worm ->
-            // Draw dying worms (death animation: shrink + fade)
-            if (worm.deathAge in 0f..0.99f) {
-                val t = worm.deathAge
-                val scale = (1f - t * 1.1f).coerceAtLeast(0f)
-                val alpha = ((1f - t) * 200).toInt().coerceIn(0, 200)
-                val cx = worm.x*width; val cy = worm.y; val r = wormRadius * scale
-                val deathPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = if(worm.team==0) Color.argb(alpha,255,150,70) else Color.argb(alpha,80,225,110)
-                }
-                canvas.drawCircle(cx, cy, r, deathPaint)
-                return@forEachIndexed
-            }
-            if (!worm.alive) return@forEachIndexed
-            val cx = worm.x*width; val cy = worm.y; val r = wormRadius
-            // Walk bobbing
-            val bob = if (worm.moveLeft < 1f && abs(moveInput) > 0.01f)
-                sin((worm.walkFrame / 6f) * PI.toFloat()) * r * 0.12f else 0f
-            wormSprite?.let { spr ->
-                canvas.save()
-                canvas.translate(cx, cy + bob)
-                if (worm.facing == Dir.LEFT) {
-                    canvas.scale(-1f, 1f)
-                    canvas.drawBitmap(spr, -r*1.3f, -r*1.3f, null)
-                } else {
-                    canvas.drawBitmap(spr, -r*1.3f, -r*1.3f, null)
-                }
-                canvas.restore()
-                val tint = if(worm.team==0) teamAPaint else teamBPaint
-                val oval = RectF(cx-r*1.3f,cy-r*1.3f+bob,cx+r*1.3f,cy+r*1.3f+bob)
-                canvas.drawOval(oval, tint)
-            } ?: run {
-                canvas.drawCircle(cx,cy+bob,r, if(worm.team==0) teamAPaint else teamBPaint)
-                canvas.drawCircle(cx,cy+bob,r,panelBorder)
-            }
-            if (index==activeWormIndex && winnerTeam==null) {
-                val mark=RectF(cx-r*1.8f,cy-r*2.6f+bob,cx+r*1.8f,cy-r*1.4f+bob)
-                canvas.drawRoundRect(mark,10f,10f,activePaint); canvas.drawRoundRect(mark,10f,10f,panelBorder)
-                canvas.drawText("▶",cx-8f,cy-r*2.0f+bob,bodyText)
-            }
-            // Draw parachute when open
+        worms.forEach { worm ->
+            if (!worm.alive && worm.deathAge < 0f) return@forEach
+            val cx = worm.x * width; val cy = worm.y
+            val r = wormRadius
+            val alpha = if (worm.deathAge > 0f) ((1f - worm.deathAge) * 255).toInt().coerceIn(0, 255) else 255
+            val scale = if (worm.deathAge > 0f) (1f - worm.deathAge * 0.7f).coerceAtLeast(0.1f) else 1f
+            val drawR = r * scale
+            val teamColor = if (worm.team == 0) Color.rgb(40, 140, 220) else Color.rgb(220, 60, 60)
+
+            // Shadow
+            solidPaint.color = Color.argb(alpha / 3, 0, 0, 0); solidPaint.style = Paint.Style.FILL
+            canvas.drawCircle(cx + 3f, cy + 3f, drawR, solidPaint)
+            // Body
+            solidPaint.color = Color.argb(alpha, Color.red(teamColor), Color.green(teamColor), Color.blue(teamColor))
+            canvas.drawCircle(cx, cy, drawR, solidPaint)
+            // Highlight
+            solidPaint.color = Color.argb(alpha * 4 / 5, 255, 255, 255)
+            canvas.drawCircle(cx - drawR * 0.25f, cy - drawR * 0.25f, drawR * 0.3f, solidPaint)
+            // Parachute
             if (worm.parachuteOpen) {
-                val px=cx; val py=cy+bob-r*2.8f
-                val pCanopy=Path().apply {
-                    moveTo(px,py); cubicTo(px-r*1.4f,py+r*0.3f,px-r*1.8f,py+r*1.0f,px-r*1.6f,py+r*1.4f)
-                    lineTo(px+r*1.6f,py+r*1.4f)
-                    cubicTo(px+r*1.8f,py+r*1.0f,px+r*1.4f,py+r*0.3f,px,py)
-                    close()
-                }
-                val paraPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color=Color.argb(160,255,240,255); style=Paint.Style.FILL
-                }
-                canvas.drawPath(pCanopy,paraPaint)
-                val paraBorder=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color=Color.rgb(200,200,200); style=Paint.Style.STROKE; strokeWidth=1.5f
-                }
-                canvas.drawPath(pCanopy,paraBorder)
-                // Rope lines
-                canvas.drawLine(px-r*0.8f,py+r*1.4f,cx-r*0.4f,cy+bob-r*0.5f,paraBorder)
-                canvas.drawLine(px+r*0.8f,py+r*1.4f,cx+r*0.4f,cy+bob-r*0.5f,paraBorder)
-                canvas.drawLine(px,py+r*1.4f,cx,cy+bob-r*0.5f,paraBorder)
+                solidPaint.color = Color.argb(180, 255, 255, 255); solidPaint.style = Paint.Style.FILL
+                val capH = drawR * 3f; val capW = drawR * 2.5f
+                canvas.drawArc(cx - capW, cy - drawR - capH, cx + capW, cy - drawR, PI.toFloat(), PI.toFloat(), true, solidPaint)
+                solidPaint.color = Color.argb(100, 200, 200, 200); solidPaint.style = Paint.Style.STROKE; solidPaint.strokeWidth = 2f
+                canvas.drawLine(cx, cy - drawR, cx - capW, cy - drawR - capH * 0.6f, solidPaint)
+                canvas.drawLine(cx, cy - drawR, cx + capW, cy - drawR - capH * 0.6f, solidPaint)
+                canvas.drawLine(cx, cy - drawR, cx, cy - drawR - capH * 0.8f, solidPaint)
+                solidPaint.strokeWidth = 1.5f
             }
-            drawHpBar(canvas, worm, cx, cy+bob)
+            // Name
+            textPaint.color = Color.argb(alpha, 255, 255, 255); textPaint.textSize = r * 0.7f; textPaint.isFakeBoldText = true
+            canvas.drawText(worm.name, cx, cy - r - 6f, textPaint)
+            // HP bar
+            val bw = r * 2.6f; val bh = 7f; val bx = cx - bw / 2f; val by = cy + r + 8f
+            solidPaint.color = Color.argb(alpha / 2, 60, 60, 60); solidPaint.style = Paint.Style.FILL
+            canvas.drawRoundRect(bx, by, bx + bw, by + bh, 3f, 3f, solidPaint)
+            val hpFrac = (worm.hp / 100f).coerceIn(0f, 1f)
+            solidPaint.color = when { hpFrac > 0.5f -> Color.argb(alpha, 80, 220, 80); hpFrac > 0.25f -> Color.argb(alpha, 255, 200, 0); else -> Color.argb(alpha, 255, 60, 60) }
+            canvas.drawRoundRect(bx, by, bx + bw * hpFrac, by + bh, 3f, 3f, solidPaint)
+            solidPaint.style = Paint.Style.STROKE; solidPaint.color = Color.argb(alpha, 255, 255, 255); solidPaint.strokeWidth = 1.5f
+            canvas.drawRoundRect(bx, by, bx + bw, by + bh, 3f, 3f, solidPaint)
         }
-    }
-
-    private fun drawHpBar(canvas: Canvas, worm: Worm, cx: Float, cy: Float) {
-        val bw=wormRadius*3.4f; val bh=12f; val top=cy-wormRadius-20f; val left=cx-bw/2f
-        val outer=RectF(left,top,left+bw,top+bh); val fill=(bw-4f)*(worm.hp.coerceIn(0,100)/100f)
-        canvas.drawRoundRect(outer,7f,7f,hpBgPaint); canvas.drawRoundRect(outer,7f,7f,panelBorder)
-        canvas.drawRoundRect(RectF(left+2f,top+2f,left+2f+fill,top+bh-2f),6f,6f,
-            if(worm.hp>40) hpGoodPaint else hpBadPaint)
-        canvas.drawText("${worm.name}",left,top-5f,smallText)
-    }
-
-    private fun drawCrates(canvas: Canvas) {
-        crates.filter{it.active}.forEach { crate ->
-            val sz=crateSize; val rect=RectF(crate.x-sz/2f,crate.y-sz/2f,crate.x+sz/2f,crate.y+sz/2f)
-            canvas.drawRoundRect(rect,10f,10f,cratePaint); canvas.drawRoundRect(rect,10f,10f,panelBorder)
-            canvas.drawLine(rect.left+5f,rect.centerY(),rect.right-5f,rect.centerY(),crateBandPaint)
-            canvas.drawLine(rect.centerX(),rect.top+5f,rect.centerX(),rect.bottom-5f,crateBandPaint)
-            val lbl=if(crate.type==CrateType.HEALTH) "+" else "?"
-            val lblPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-                color=if(crate.type==CrateType.HEALTH) Color.rgb(80,200,80) else Color.rgb(255,200,80)
-                textSize=sz*0.55f; textAlign=Paint.Align.CENTER
-            }
-            canvas.drawText(lbl,rect.centerX(),rect.centerY()+sz*0.2f,lblPaint)
-        }
+        textPaint.isFakeBoldText = false
     }
 
     private fun drawAimPreview(canvas: Canvas) {
-        if (winnerTeam!=null||explosion!=null||mode==GameMode.TITLE) return
-        if (mode==GameMode.PVE && activeTeam()==1) return
-        val worm=worms[activeWormIndex]; if(!worm.alive) return
-        val dir=if(worm.team==0) 1f else -1f
-        val weapon=weapons[selectedWeapon]
-        var x=worm.x*width; var y=worm.y-wormRadius
-        val rad=Math.toRadians(angleDeg.toDouble())
-        var vx=(cos(rad)*weapon.speed*power*dir).toFloat()
-        var vy=(-sin(rad)*weapon.speed*power).toFloat()
-        // Draw parabolic arc: dots that get smaller/fainter as they travel further
+        val worm = worms.getOrNull(activeWormIndex) ?: return
+        if (!worm.alive) return
+        val dir = if (worm.facing == 1) 1f else -1f
+        val wpn = weapons[selectedWeapon]
+        var x = worm.x * width; var y = worm.y - wormRadius
+        val rad = Math.toRadians(angleDeg.toDouble())
+        var vx = (cos(rad) * wpn.speed * power * dir).toFloat()
+        var vy = (-sin(rad) * wpn.speed * power).toFloat()
+
         for (i in 0 until 30) {
-            x+=vx*0.08f; y+=vy*0.08f; vx+=wind*0.08f; vy+=600f*weapon.gravityScale*0.08f
-            if (x!in 0f..width.toFloat()||y!in 0f..height.toFloat()||isTerrainAt(x,y)) break
-            val progress=i.toFloat()/30f
-            val alpha=(220*(1f-progress*0.5f)).toInt().coerceIn(40,220)
-            val sz=(9f*(1f-progress*0.5f)).coerceAtLeast(3f)
-            val dotPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha,255,220,80)}
-            canvas.drawCircle(x,y,sz+2f,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha/2,0,0,0)})
-            canvas.drawCircle(x,y,sz,dotPaint)
+            x += vx * 0.08f; y += vy * 0.08f; vx += wind * 0.08f; vy += 600f * wpn.gravityScale * 0.08f
+            if (x < 0f || x >= width || y >= height || isTerrainAt(x, y)) break
+            val progress = i / 30f
+            val alpha = (200 * (1f - progress * 0.5f)).toInt().coerceIn(40, 200)
+            val sz = (9f * (1f - progress * 0.5f)).coerceAtLeast(3f)
+            outlinePaint.color = Color.argb(alpha / 2, 0, 0, 0); outlinePaint.strokeWidth = sz * 0.8f
+            canvas.drawCircle(x, y, sz, outlinePaint)
+            solidPaint.color = Color.argb(alpha, 255, 220, 80); solidPaint.style = Paint.Style.FILL
+            canvas.drawCircle(x, y, sz, solidPaint)
         }
-        // Blast radius preview at predicted impact point (bright and visible)
-        val blastPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(80, 255, 200, 80); style = Paint.Style.FILL
-        }
-        val blastBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(220, 255, 255, 80); style = Paint.Style.STROKE; strokeWidth = 3f
-        }
-        canvas.drawCircle(x, y, weapon.radius, blastPaint)
-        canvas.drawCircle(x, y, weapon.radius, blastBorder)
-        canvas.drawText("R:${weapon.radius.roundToInt()}", x, y - weapon.radius - 8f,
-            Paint().apply{color=Color.argb(230,255,255,255);textSize=18f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
-        // Label
-        canvas.drawText("%.0f".format(weapon.radius), x, y - weapon.radius - 6f,
-            Paint().apply{color=Color.argb(180,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
+
+        // Blast radius preview
+        outlinePaint.color = Color.argb(200, 255, 255, 80); outlinePaint.strokeWidth = 3f
+        solidPaint.color = Color.argb(60, 255, 200, 80); solidPaint.style = Paint.Style.FILL
+        canvas.drawCircle(x, y, wpn.radius, solidPaint)
+        canvas.drawCircle(x, y, wpn.radius, outlinePaint)
+        textPaint.color = Color.argb(220, 255, 255, 255); textPaint.textSize = 18f; textPaint.isFakeBoldText = true
+        canvas.drawText("R:${wpn.radius.roundToInt()}", x, y - wpn.radius - 8f, textPaint)
+
+        // Aim arc above worm
+        val arcCx = worm.x * width; val arcCy = worm.y - wormRadius * 3.2f; val arcR = wormRadius * 2.8f
+        outlinePaint.color = Color.argb(150, 255, 200, 80); outlinePaint.strokeWidth = 4f
+        val startAngle = if (worm.facing == 1) 180f else 0f
+        val sweepAngle = (angleDeg / 90f) * 180f
+        canvas.drawArc(arcCx - arcR, arcCy - arcR, arcCx + arcR, arcCy + arcR, startAngle, sweepAngle, false, outlinePaint)
+
+        // Power bar
+        val barW = wormRadius * 5f; val barH = 8f; val barX = arcCx - barW / 2f; val barY = arcCy + arcR + 14f
+        solidPaint.color = Color.rgb(40, 40, 40); solidPaint.style = Paint.Style.FILL
+        canvas.drawRoundRect(barX, barY, barX + barW, barY + barH, 4f, 4f, solidPaint)
+        solidPaint.color = Color.argb(200, 255, 180, 60)
+        canvas.drawRoundRect(barX, barY, barX + barW * power, barY + barH, 4f, 4f, solidPaint)
+        textPaint.color = Color.argb(180, 255, 255, 255); textPaint.textSize = 16f
+        canvas.drawText("${angleDeg.roundToInt()}°  ${(power * 100).roundToInt()}%", arcCx, barY + barH + 22f, textPaint)
+        textPaint.isFakeBoldText = false
     }
 
-    private fun drawProjectile(canvas: Canvas) {
+    private fun drawProjectiles(canvas: Canvas) {
         projectiles.forEach { p ->
-            val wpnColor = p.weapon.color
-            // Draw trail with bright dots
-            p.trail.forEachIndexed { i, (tx,ty) ->
-                val alpha = ((i.toFloat()/p.trail.size)*220).toInt().coerceIn(20,220)
-                val sz = wormRadius*(0.25f+i.toFloat()/p.trail.size*0.55f)
-                canvas.drawCircle(tx,ty,sz,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(alpha,255,220,80)})
+            p.trail.forEachIndexed { i, (tx, ty) ->
+                val alpha = ((i.toFloat() / p.trail.size) * 200).toInt().coerceIn(20, 200)
+                val sz = wormRadius * (0.25f + i.toFloat() / p.trail.size * 0.6f)
+                solidPaint.color = Color.argb(alpha, 255, 220, 80); solidPaint.style = Paint.Style.FILL
+                canvas.drawCircle(tx, ty, sz, solidPaint)
             }
-            // Main projectile: bright circle with dark outline for visibility
-            val projSize = max(14f, wormRadius * 0.65f)
-            canvas.drawCircle(p.x,p.y,projSize+3f,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=0xFF000000.toInt()})
-            canvas.drawCircle(p.x,p.y,projSize,Paint(Paint.ANTI_ALIAS_FLAG).apply{color=wpnColor})
-            canvas.drawCircle(p.x-projSize*0.25f,p.y-projSize*0.25f,projSize*0.3f,
-                Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(180,255,255,255)})
-            // Fuse countdown for timed weapons
-            if (p.weapon.isTimed && p.timer >= 0f) {
+            val projR = max(14f, wormRadius * 0.75f)
+            outlinePaint.color = 0xFF000000.toInt(); outlinePaint.strokeWidth = 4f; solidPaint.style = Paint.Style.FILL
+            canvas.drawCircle(p.x, p.y, projR + 2f, outlinePaint)
+            solidPaint.color = p.weapon.color; canvas.drawCircle(p.x, p.y, projR, solidPaint)
+            solidPaint.color = Color.argb(180, 255, 255, 255)
+            canvas.drawCircle(p.x - projR * 0.25f, p.y - projR * 0.25f, projR * 0.3f, solidPaint)
+            if (p.weapon.isTimed) {
                 val remaining = (p.weapon.fuseSecs - p.timer).coerceAtLeast(0f)
-                val countdownPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = if(remaining < 1.0f) Color.rgb(255,80,80) else Color.WHITE
-                    textSize = 20f; textAlign = Paint.Align.CENTER
-                }
-                canvas.drawText("%.1f".format(remaining), p.x, p.y - wormRadius*0.8f, countdownPaint)
+                textPaint.color = if (remaining < 1f) Color.rgb(255, 60, 60) else Color.WHITE; textPaint.textSize = 20f
+                canvas.drawText("%.1f".format(remaining), p.x, p.y - projR - 6f, textPaint)
             }
-        }
-    }
-
-    private fun drawMuzzleFlash(canvas: Canvas) {
-        muzzleFlash?.let { mf ->
-            val bmp = mf.frames.getOrNull(mf.frame) ?: return
-            val sz = wormRadius*2.2f
-            canvas.save()
-            canvas.translate(mf.x,mf.y)
-            canvas.rotate(mf.angle)
-            canvas.drawBitmap(bmp, -sz/2f, -sz/2f, null)
-            canvas.restore()
         }
     }
 
     private fun drawExplosion(canvas: Canvas) {
         explosion?.let { exp ->
-            // Expanding shockwave ring
-            val ringProgress = (exp.age / 0.35f).coerceAtMost(1f)
-            val ringAlpha = ((1f - ringProgress) * 180).toInt().coerceIn(0,180)
-            val ringRadius = exp.radius * (0.3f + ringProgress * 1.4f)
-            blastRingPaint.color = Color.argb(ringAlpha, 255, 200, 100)
-            blastRingPaint.strokeWidth = (8f * (1f - ringProgress) + 2f).coerceAtLeast(2f)
-            canvas.drawCircle(exp.x, exp.y, ringRadius, blastRingPaint)
-            // Particles
-            exp.particles.forEach { part ->
-                val alpha = ((1f-part.life/part.maxLife)*220).toInt().coerceIn(0,220)
-                val sz = part.size*(1f+part.life/part.maxLife*0.5f)
-                canvas.save()
-                canvas.translate(part.x,part.y); canvas.rotate(part.rot)
-                canvas.drawBitmap(bmpWithAlpha(part.bmp,alpha),-sz/2f,-sz/2f,null)
-                canvas.restore()
+            val progress = (exp.age / 0.55f).coerceAtMost(1f)
+            val ringAlpha = ((1f - progress) * 200).toInt().coerceIn(0, 200)
+            outlinePaint.color = Color.argb(ringAlpha, 255, 200, 80)
+            outlinePaint.strokeWidth = (8f * (1f - progress) + 2f).coerceAtLeast(2f)
+            canvas.drawCircle(exp.x, exp.y, exp.radius * (0.3f + progress * 1.4f), outlinePaint)
+            exp.particles.forEach { p ->
+                val alpha = ((1f - p.life / p.maxLife) * 220).toInt().coerceIn(0, 220)
+                val sz = p.size * (1f - p.life / p.maxLife * 0.5f)
+                solidPaint.color = Color.argb(alpha, Color.red(p.color), Color.green(p.color), Color.blue(p.color))
+                solidPaint.style = Paint.Style.FILL
+                canvas.drawCircle(p.x, p.y, sz, solidPaint)
             }
         }
     }
 
-    private fun drawParticles(canvas: Canvas) {
-        particles.forEach { p ->
-            val alpha = ((1f-p.life/p.maxLife)*200).toInt().coerceIn(0,200)
-            val sz = p.size
-            canvas.save()
-            canvas.translate(p.x,p.y); canvas.rotate(p.rot)
-            canvas.drawBitmap(bmpWithAlpha(p.bmp,alpha),-sz/2f,-sz/2f,null)
-            canvas.restore()
+    private fun drawHud(canvas: Canvas) {
+        val worm = worms.getOrNull(activeWormIndex) ?: return
+        val elapsed = System.currentTimeMillis() - turnStartedMs
+        val remaining = ((turnDurationMs - elapsed) / 1000).toInt().coerceAtLeast(0)
+        val urgent = remaining <= 10
+        textPaint.textSize = 28f; textPaint.color = if (urgent) Color.rgb(255, 60, 60) else Color.WHITE; textPaint.isFakeBoldText = true
+        canvas.drawText("${remaining}s", width / 2f, 50f, textPaint)
+        textPaint.textSize = 22f; textPaint.color = Color.WHITE
+        canvas.drawText("${if (wind >= 0) "→" else "←"} ${abs(wind).roundToInt()}", width / 2f, 82f, textPaint)
+        textPaint.textSize = 20f; canvas.drawText(worm.name, width / 2f, 112f, textPaint)
+        textPaint.isFakeBoldText = false
+        if (turnFlashAge > 0f) {
+            solidPaint.color = Color.argb((turnFlashAge * 400).toInt().coerceIn(0, 255), 255, 255, 255); solidPaint.style = Paint.Style.FILL
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), solidPaint)
         }
     }
 
-    private fun bmpWithAlpha(bmp: Bitmap, alpha: Int): Bitmap {
-        val out = Bitmap.createBitmap(bmp.width,bmp.height,Config.ARGB_8888)
-        val c = Canvas(out)
-        val p = Paint().apply { this.alpha = alpha }
-        c.drawBitmap(bmp,0f,0f,p)
-        return out
-    }
-
-    private fun drawHud(canvas: Canvas, w: Float, h: Float) {
-        val panel=RectF(10f,10f,w-10f,124f)
-        canvas.drawRoundRect(panel,16f,16f,panelPaint); canvas.drawRoundRect(panel,16f,16f,panelBorder)
-        logoSmall?.let { canvas.drawBitmap(it,null,RectF(16f,14f,56f,54f),null) }
-        val active=worms.getOrNull(activeWormIndex) ?: return
-        val turnLeft=(turnDurationMs-(System.currentTimeMillis()-turnStartedMs)).coerceAtLeast(0L)
-        val secs=turnLeft/1000+1
-        canvas.drawText("TURN",68f,36f,hudSubText)
-        canvas.drawText(if(active.team==0) "TEAM α" else if(mode==GameMode.PVE) "AI β" else "TEAM β",68f,60f,hudText)
-        canvas.drawText("Worm: ${active.name}",68f,82f,hudText)
-        canvas.drawText("⏱ ${secs}s",68f,104f,
-            Paint(hudText).apply{color=if(secs<=10) Color.rgb(255,80,80) else Color.WHITE})
-        val wpn=weapons[selectedWeapon]
-        canvas.drawText("WEAPON",w*0.28f,36f,hudSubText)
-        val iconBg=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=wpn.color}
-        canvas.drawRoundRect(RectF(w*0.28f,40f,w*0.28f+32f,72f),8f,8f,iconBg)
-        canvas.drawRoundRect(RectF(w*0.28f,40f,w*0.28f+32f,72f),8f,8f,panelBorder)
-        canvas.drawText("${wpn.name}",w*0.28f+40f,56f,hudText)
-        canvas.drawText("A:${angleDeg.roundToInt()}° P:${(power*100).roundToInt()}%",w*0.28f,80f,hudText)
-        canvas.drawText("Move:${(active.moveLeft*100).roundToInt()}% Jump:${active.jumpsLeft}",w*0.28f,104f,hudText)
-        val aliveA=worms.count{it.team==0&&it.alive}; val aliveB=worms.count{it.team==1&&it.alive}
-        canvas.drawText("TEAM α",w*0.56f,36f,hudSubText)
-        canvas.drawText("Alive: $aliveA/3",w*0.56f,80f,hudText)
-        canvas.drawText("TEAM β",w*0.56f,104f,hudSubText)
-        canvas.drawText("Alive: $aliveB/3",w*0.56f,122f,hudText)
-        drawWind(canvas,w*0.86f,58f)
-        winnerTeam?.let {
-            val msg=if(mode==GameMode.PVE&&it==1) "AI wins — tap to restart"
-                    else "Team ${if(it==0) "α" else "β"} wins — tap to restart"
-            canvas.drawText(msg,20f,h-22f,bodyText)
-        }
-    }
-
-    private fun drawWind(canvas: Canvas, x: Float, y: Float) {
-        val len=abs(wind)*0.55f+22f; val dir=if(wind>=0f) 1f else -1f
-        canvas.drawLine(x,y,x+len*dir,y,windPaint)
-        canvas.drawLine(x+len*dir,y,x+(len-10f)*dir,y-6f,windPaint)
-        canvas.drawLine(x+len*dir,y,x+(len-10f)*dir,y+6f,windPaint)
-        canvas.drawText("Wind ${"%+.1f".format(wind/18f)}",x-8f,y-12f,hudSubText)
-    }
-
-    // ── Worm selection screen ─────────────────────────────────────────────────
-    private fun drawWormSelect(canvas: Canvas, w: Float, h: Float) {
-        // Dim overlay
-        canvas.drawRect(0f,0f,w,h, Paint().apply{color=Color.argb(160,0,0,0)})
-        // Panel
-        val panel=RectF(w*0.10f,h*0.20f,w*0.90f,h*0.75f)
-        canvas.drawRoundRect(panel,20f,20f, Paint().apply{color=Color.rgb(30,30,30)})
-        canvas.drawRoundRect(panel,20f,20f, Paint().apply{color=Color.rgb(100,100,100);style=Paint.Style.STROKE;strokeWidth=3f})
-        val teamLabel=if(selectingTeam==0) "Team α — Choose Your Worm" else if(mode==GameMode.PVE) "AI β — Selecting..." else "Team β — Choose Your Worm"
-        canvas.drawText(teamLabel,w/2f,h*0.28f,
-            Paint().apply{color=Color.WHITE;textSize=28f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
-        // Draw each alive worm of the selecting team
-        worms.filter{it.alive && it.team==selectingTeam}.forEach{ worm ->
-            val cx=worm.x*width; val cy=h*0.50f
-            val r=wormRadius*1.8f
-            // Worm circle
-            val bgPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-                color=Color.argb(200, if(worm.team==0) 255 else 80, if(worm.team==0) 150 else 225, if(worm.team==0) 70 else 110)
-            }
-            canvas.drawCircle(cx,cy,r,bgPaint)
-            canvas.drawCircle(cx,cy,r, Paint().apply{color=Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2.5f})
-            wormSprite?.let{ canvas.drawBitmap(it,null, RectF(cx-r,cy-r,cx+r,cy+r),null) }
-            canvas.drawText(worm.name,cx,cy+r*1.6f,
-                Paint().apply{color=Color.WHITE;textSize=22f;textAlign=Paint.Align.CENTER})
-            canvas.drawText("HP: ${worm.hp}",cx,cy+r*1.6f+24f,
-                Paint().apply{color=Color.rgb(180,220,180);textSize=18f;textAlign=Paint.Align.CENTER})
-        }
-        canvas.drawText("Tap a worm to select",w/2f,h*0.70f,
-            Paint().apply{color=Color.rgb(180,180,180);textSize=20f;textAlign=Paint.Align.CENTER})
-    }
-
-    // ── Game over screen ──────────────────────────────────────────────────────
-    private fun drawGameOver(canvas: Canvas, w: Float, h: Float) {
-        canvas.drawRect(0f,0f,w,h, Paint().apply{color=Color.argb(180,0,0,0)})
-        val panel=RectF(w*0.08f,h*0.12f,w*0.92f,h*0.85f)
-        canvas.drawRoundRect(panel,24f,24f, Paint().apply{color=Color.rgb(25,25,35)})
-        canvas.drawRoundRect(panel,24f,24f, Paint().apply{color=Color.rgb(120,120,180);style=Paint.Style.STROKE;strokeWidth=3f})
-        val winTeam=winnerTeam ?: return
-        val winLabel=when{mode==GameMode.PVE && winTeam==1->"AI β WINS!"; winTeam==0->"Team α Wins!"; else->"Team β Wins!"}
-        val winColor=if(winTeam==0) Color.rgb(255,180,80) else Color.rgb(80,255,130)
-        canvas.drawText(winLabel,w/2f,h*0.23f,
-            Paint().apply{color=winColor;textSize=40f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
-        // Stats
-        val aliveA=worms.filter{it.team==0}.map{it.name+" HP:"+it.hp}.joinToString("  ")
-        val aliveB=worms.filter{it.team==1}.map{it.name+" HP:"+it.hp}.joinToString("  ")
-        canvas.drawText("Team α: $aliveA",w/2f,h*0.36f,
-            Paint().apply{color=Color.rgb(255,200,120);textSize=20f;textAlign=Paint.Align.CENTER})
-        canvas.drawText("Team β: $aliveB",w/2f,h*0.43f,
-            Paint().apply{color=Color.rgb(130,220,150);textSize=20f;textAlign=Paint.Align.CENTER})
-        // Kill feed summary
-        if (killFeed.isNotEmpty()) {
-            canvas.drawText("Recent events:",w/2f,h*0.52f,
-                Paint().apply{color=Color.rgb(160,160,160);textSize=18f;textAlign=Paint.Align.CENTER})
-            killFeed.takeLast(4).forEachIndexed { i, entry ->
-                canvas.drawText(entry.text,w/2f,h*0.57f+i*26f,
-                    Paint().apply{color=Color.rgb(220,200,160);textSize=17f;textAlign=Paint.Align.CENTER})
-            }
-        }
-        // Restart button
-        val btn=RectF(w*0.25f,h*0.72f,w*0.75f,h*0.80f)
-        canvas.drawRoundRect(btn,16f,16f, Paint().apply{color=Color.rgb(60,100,200)})
-        canvas.drawRoundRect(btn,16f,16f, Paint().apply{color=Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2f})
-        canvas.drawText("TAP TO RESTART",btn.centerX(),btn.centerY()+8f,
-            Paint().apply{color=Color.WHITE;textSize=22f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
-    }
-
-    private fun drawKillFeed(canvas: Canvas, w: Float) {
-        if (killFeed.isEmpty()) return
-        val feedTop = 196f; val lineH = 28f
-        killFeed.forEachIndexed { i, entry ->
-            val alpha = ((1f - entry.age / 4.0f) * 220).toInt().coerceIn(0, 220)
-            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.argb(alpha / 2, 20, 20, 20); style = Paint.Style.FILL
-            }
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.argb(alpha, 255, 220, 160); textSize = 20f
-                textAlign = Paint.Align.CENTER
-            }
-            val y = feedTop + i * lineH
-            canvas.drawRoundRect(RectF(w / 2f - 140f, y - 14f, w / 2f + 140f, y + 10f), 6f, 6f, bgPaint)
-            canvas.drawText(entry.text, w / 2f, y + 4f, textPaint)
-        }
-    }
-
-    // ── Weapon bar (horizontal strip of all 6 weapons) ────────────────────────
-    private fun drawWeaponBar(canvas: Canvas, w: Float, h: Float) {
-        val barTop = 128f; val barBot = 182f
-        val slotW = w / 7f
+    private fun drawWeaponBar(canvas: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val iconW = w / 10f; val barH2 = iconW * 1.2f; val y = h - barH2 - 10f
         weapons.forEachIndexed { i, wpn ->
-            val left = slotW * (i + 0.5f); val right = slotW * (i + 1.5f)
-            val selected = (i == selectedWeapon)
-            val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = if(selected) Color.argb(220,255,230,120) else Color.argb(180,80,80,80)
+            val ix = iconW * i + 8f
+            val selected = i == selectedWeapon
+            val hasAmmo = weaponAmmo[i] > 0
+            solidPaint.style = Paint.Style.FILL
+            solidPaint.color = when {
+                !hasAmmo -> Color.rgb(50, 50, 50)
+                selected -> Color.rgb(80, 80, 80)
+                else -> Color.rgb(30, 30, 30)
             }
-            val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = if(selected) Color.rgb(255,180,0) else Color.rgb(120,120,120)
-                style = Paint.Style.STROKE; strokeWidth = if(selected) 3f else 1.5f
+            canvas.drawRoundRect(ix, y, ix + iconW - 6f, y + barH2, 8f, 8f, solidPaint)
+            outlinePaint.color = if (selected) Color.rgb(255, 200, 80) else Color.rgb(100, 100, 100)
+            outlinePaint.strokeWidth = if (selected) 3f else 1f
+            canvas.drawRoundRect(ix, y, ix + iconW - 6f, y + barH2, 8f, 8f, outlinePaint)
+            textPaint.color = if (hasAmmo) wpn.color else Color.rgb(80, 80, 80); textPaint.textSize = iconW * 0.22f
+            canvas.drawText(wpn.name.take(3), ix + iconW / 2 - 3f, y + barH2 * 0.45f, textPaint)
+            val dotR = 4f; val dotSpacing = dotR * 2.5f; val totalDots = min(8, wpn.ammo)
+            val startX = ix + iconW / 2 - (totalDots * dotSpacing) / 2
+            repeat(totalDots) { d ->
+                solidPaint.color = if (d < weaponAmmo[i]) Color.rgb(255, 220, 60) else Color.rgb(60, 60, 60)
+                canvas.drawCircle(startX + d * dotSpacing, y + barH2 * 0.8f, dotR, solidPaint)
             }
-            canvas.drawRoundRect(RectF(left+4f,barTop+4f,right-4f,barBot-4f),10f,10f,bg)
-            canvas.drawRoundRect(RectF(left+4f,barTop+4f,right-4f,barBot-4f),10f,10f,border)
-            // Weapon icon: colored circle
-            val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = wpn.color }
-            canvas.drawCircle((left+right)/2f, barTop+26f, 13f, iconPaint)
-            // Timer indicator for timed weapons
             if (wpn.isTimed) {
-                val fusePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255,80,80); strokeWidth=2.5f }
-                canvas.drawCircle((left+right)/2f, barTop+26f, 16f, fusePaint)
-                canvas.drawText("T",(left+right)/2f-5f,barTop+30f,
-                    Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.WHITE;textSize=16f})
-            }
-            // Name label
-            canvas.drawText(wpn.name.take(4),(left+right)/2f,barBot-8f,
-                Paint(Paint.ANTI_ALIAS_FLAG).apply{
-                    color=if(selected) Color.BLACK else Color.rgb(200,200,200); textSize=17f; textAlign=Paint.Align.CENTER
-                })
-            // Ammo dots
-            val maxAmmo=wpn.ammo.coerceAtMost(8)
-            val ammoCount=weaponAmmo[i].coerceIn(0,maxAmmo)
-            val dotR=3.5f; val dotGap=9f; val totalW=(maxAmmo-1)*dotGap
-            val dotX=(left+right)/2f-totalW/2f
-            for(d in 0 until maxAmmo) {
-                val dotPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-                    color=if(d<ammoCount) Color.rgb(255,200,60) else Color.rgb(60,60,60)
-                }
-                canvas.drawCircle(dotX+d*dotGap, barTop+52f, dotR, dotPaint)
+                solidPaint.color = Color.rgb(255, 60, 60); textPaint.textSize = iconW * 0.18f; textPaint.color = Color.rgb(255, 60, 60)
+                canvas.drawText("T", ix + iconW - 14f, y + 16f, textPaint)
             }
         }
-        // Weapon bar underline
-        canvas.drawLine(0f,barBot+2f,w,barBot+2f,
-            Paint().apply{color=Color.rgb(100,100,100);strokeWidth=1f})
     }
 
-    private fun drawControls(canvas: Canvas, w: Float, h: Float) {
-        if (winnerTeam!=null) return
-        val mp=movePadRect(w,h); val jp=jumpRect(w,h); val wp=weaponRect(w,h)
-        val ar=aimRect(w,h); val fr=fireRect(w,h)
+    private fun drawControls(canvas: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val joyR = wormRadius * 2.8f
+        val joyCX = 30f + joyR; val joyCY = h - joyR - 30f
+        solidPaint.color = Color.argb(60, 200, 200, 200); solidPaint.style = Paint.Style.FILL
+        canvas.drawCircle(joyCX, joyCY, joyR, solidPaint)
+        outlinePaint.color = Color.argb(100, 200, 200, 200); outlinePaint.strokeWidth = 2f
+        canvas.drawCircle(joyCX, joyCY, joyR, outlinePaint)
+        solidPaint.color = Color.argb(150, 255, 255, 255)
+        canvas.drawCircle(joyCX + joystickDeltaX, joyCY + joystickDeltaY, joyR * 0.5f, solidPaint)
 
-        // ── Virtual joystick (MOVE) ─────────────────────────────────────────────
-        // Outer ring
-        canvas.drawCircle(mp.centerX(),mp.centerY(),joystickRadius, Paint().apply{
-            color=Color.argb(60,80,180,255); style=Paint.Style.FILL
-        })
-        canvas.drawCircle(mp.centerX(),mp.centerY(),joystickRadius,
-            Paint().apply{color=Color.argb(120,100,200,255);style=Paint.Style.STROKE;strokeWidth=2.5f})
-        // Inner knob — follows thumb when active
-        val knobX=if(joystickActive) joystickTouchX.coerceIn(mp.centerX()-joystickRadius, mp.centerX()+joystickRadius) else mp.centerX()
-        val knobY=if(joystickActive) joystickTouchY.coerceIn(mp.centerY()-joystickRadius, mp.centerY()+joystickRadius) else mp.centerY()
-        canvas.drawCircle(knobX,knobY,joystickKnobRadius,joystickKnobPaint)
-        canvas.drawCircle(knobX,knobY,joystickKnobRadius,
-            Paint().apply{color=Color.argb(200,255,255,255);style=Paint.Style.STROKE;strokeWidth=2f})
-        canvas.drawText("◀ MOVE ▶",mp.centerX(),mp.centerY()+joystickRadius+18f,
-            Paint().apply{color=Color.argb(180,255,255,255);textSize=17f;textAlign=Paint.Align.CENTER})
-
-        // ── Right-side control buttons ────────────────────────────────────────
-        // FIRE button — shows cooldown when cooling down
-        val cooling = cooldownRemaining > 0L
-        val coolFrac = if(cooling) cooldownRemaining.toFloat()/fireCooldown else 0f
-        val fireBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if(cooling) Color.rgb(90,90,90) else Color.rgb(230,80,30); style=Paint.Style.FILL
-        }
-        canvas.drawRoundRect(fr,18f,18f, fireBgPaint)
-        canvas.drawRoundRect(fr,18f,18f, fireBtnBorder)
+        val fireX = w - wormRadius * 2.8f; val fireY = h - wormRadius * 2.8f - 30f; val fireR = wormRadius * 2.2f
+        val cooling = cooldownRemaining > 0
+        solidPaint.color = if (cooling) Color.rgb(80, 80, 80) else Color.rgb(200, 50, 50); solidPaint.style = Paint.Style.FILL
+        canvas.drawCircle(fireX, fireY, fireR, solidPaint)
+        outlinePaint.color = if (cooling) Color.rgb(120, 120, 120) else Color.rgb(255, 120, 120); outlinePaint.strokeWidth = 3f
+        canvas.drawCircle(fireX, fireY, fireR, outlinePaint)
+        textPaint.color = Color.WHITE; textPaint.textSize = wormRadius * 0.8f; textPaint.isFakeBoldText = true
+        canvas.drawText("FIRE", fireX, fireY + wormRadius * 0.25f, textPaint)
         if (cooling) {
-            // Cooldown overlay arc
-            val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.rgb(255,160,60); style=Paint.Style.STROKE; strokeWidth=5f
-            }
-            canvas.drawArc(fr.left+8f,fr.top+8f,fr.right-8f,fr.bottom-8f,
-                -90f, 360f*(1f-coolFrac), false, arcPaint)
-            canvas.drawText("%.1fs".format(cooldownRemaining/1000.0),
-                fr.centerX(), fr.centerY()+8f,
-                Paint().apply{color=Color.LTGRAY;textSize=24f;textAlign=Paint.Align.CENTER})
-        } else {
-            canvas.drawText("FIRE",fr.centerX(),fr.centerY()+8f,
-                Paint().apply{color=Color.WHITE;textSize=30f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+            val frac = 1f - cooldownRemaining.toFloat() / fireCooldown
+            outlinePaint.color = Color.rgb(255, 200, 80); outlinePaint.strokeWidth = 5f
+            canvas.drawArc(fireX - fireR, fireY - fireR, fireX + fireR, fireY + fireR, -90f, frac * 360f, false, outlinePaint)
+            textPaint.textSize = wormRadius * 0.55f
+            canvas.drawText("%.1f".format(cooldownRemaining / 1000f), fireX, fireY + wormRadius * 0.75f, textPaint)
         }
 
-        // WEAPON button
-        canvas.drawRoundRect(wp,14f,14f,panelPaint); canvas.drawRoundRect(wp,14f,14f,panelBorder)
-        val wpn=weapons[selectedWeapon]
-        canvas.drawText("WPN",wp.centerX(),wp.centerY()-5f,
-            Paint().apply{color=Color.DKGRAY;textSize=18f;textAlign=Paint.Align.CENTER})
-        canvas.drawCircle(wp.centerX(),wp.centerY()+22f,10f,
-            Paint().apply{color=wpn.color})
+        val jumpX = w - wormRadius * 2.8f; val jumpY = h - wormRadius * 5.8f
+        solidPaint.color = Color.rgb(50, 130, 200); solidPaint.style = Paint.Style.FILL
+        canvas.drawRoundRect(jumpX - wormRadius * 2.2f, jumpY - wormRadius, jumpX + wormRadius * 2.2f, jumpY + wormRadius, 12f, 12f, solidPaint)
+        outlinePaint.color = Color.rgb(100, 180, 255); outlinePaint.strokeWidth = 2f
+        canvas.drawRoundRect(jumpX - wormRadius * 2.2f, jumpY - wormRadius, jumpX + wormRadius * 2.2f, jumpY + wormRadius, 12f, 12f, outlinePaint)
+        textPaint.color = Color.WHITE; textPaint.textSize = wormRadius * 0.65f
+        canvas.drawText("JUMP", jumpX, jumpY + wormRadius * 0.25f, textPaint)
 
-        // JUMP button
-        canvas.drawRoundRect(jp,14f,14f,activePaint); canvas.drawRoundRect(jp,14f,14f,panelBorder)
-        val jumpLabel=if(worms.getOrNull(activeWormIndex)?.hasParachute==true) "PARA" else "JUMP"
-        canvas.drawText(jumpLabel,jp.centerX(),jp.centerY()+8f,
-            Paint().apply{color=Color.DKGRAY;textSize=22f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
-
-        // ── Slingshot aim indicator (centered on active worm) ────────────────
-        val worm=worms.getOrNull(activeWormIndex) ?: return
-        val wx=worm.x*width; val wy=worm.y
-        // Angle arc above the worm
-        val arcCx=wx; val arcCy=wy-wormRadius*2.8f
-        val arcR=wormRadius*2.5f
-        val aimArcColor=if(aimActive) 0xFFC8C850.toInt() else 0xFF5078FF.toInt()
-        val indicatorPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-            color=aimArcColor; style=Paint.Style.STROKE; strokeWidth=4f
-        }
-        val startAngle=if(worm.team==0) 180f else 0f
-        val sweepAngle=(angleDeg/90f)*180f
-        canvas.drawArc(arcCx-arcR,arcCy-arcR,arcCx+arcR,arcCy+arcR,
-            startAngle, sweepAngle, false, indicatorPaint)
-        // Power bar below the arc
-        val barW=wormRadius*5f; val barH=8f; val barX=wx-barW/2f; val barY=arcCy+arcR+12f
-        canvas.drawRoundRect(RectF(barX,barY,barX+barW,barY+barH),4f,4f,
-            Paint().apply{color=Color.rgb(40,40,40)})
-        canvas.drawRoundRect(RectF(barX,barY,barX+barW*power,barY+barH),4f,4f,
-            Paint().apply{color=Color.argb(200,255,180,60)})
-        // Angle + power text
-        canvas.drawText("${angleDeg.roundToInt()}°  ${(power*100).roundToInt()}%", wx, barY+barH+20f,
-            Paint().apply{color=Color.argb(180,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
+        val wpX = w - wormRadius * 2.8f; val wpY = h - wormRadius * 8.8f
+        solidPaint.color = Color.rgb(50, 150, 80); solidPaint.style = Paint.Style.FILL
+        canvas.drawRoundRect(wpX - wormRadius * 2.2f, wpY - wormRadius, wpX + wormRadius * 2.2f, wpY + wormRadius, 12f, 12f, solidPaint)
+        outlinePaint.color = Color.rgb(100, 220, 140); outlinePaint.strokeWidth = 2f
+        canvas.drawRoundRect(wpX - wormRadius * 2.2f, wpY - wormRadius, wpX + wormRadius * 2.2f, wpY + wormRadius, 12f, 12f, outlinePaint)
+        textPaint.color = Color.WHITE; textPaint.textSize = wormRadius * 0.6f
+        canvas.drawText(weapons[selectedWeapon].name.uppercase().take(4), wpX, wpY + wormRadius * 0.25f, textPaint)
+        textPaint.isFakeBoldText = false
     }
 
-    private fun updateFrame() {
-        val now=System.nanoTime()
-        val dt=((now-lastFrameNanos)/1_000_000_000f).coerceAtMost(0.033f)
-        lastFrameNanos=now; frameCount++
-        if (mode==GameMode.TITLE) return
-        bulletOffset+=dt*8f
-        // Update shake
-        if (shakeAge>=0f) { shakeAge+=dt; if (shakeAge>0.45f) { shakeAge=-1f; shakeIntensity=0f } }
-        // Update turn flash
-        if (turnFlashAge>=0f) { turnFlashAge+=dt*2.5f; if (turnFlashAge>=1f) turnFlashAge=-1f }
-        // Tick kill feed
-        killFeed.forEach { it.age += dt }
-        killFeed.removeAll { it.age > 4.0f }
-        // Update clouds
-        cloudOffset += dt * 6f
-        // Auto AI worm selection
-        if (mode==GameMode.SELECT_WORM && aiSelectAt>0L && System.currentTimeMillis()>=aiSelectAt) {
-            val candidates=worms.filter{it.alive && it.team==1}
-            if (candidates.isNotEmpty()) {
-                val chosen=candidates.random()
-                activeWormIndex=worms.indexOf(chosen)
-                aiSelectAt=0L; mode=GameMode.PVE; activateCurrentWorm()
-            }
+    private fun drawTitle(canvas: Canvas) {
+        solidPaint.color = Color.argb(180, 0, 0, 0); solidPaint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), solidPaint)
+        textPaint.textSize = width * 0.1f; textPaint.color = Color.WHITE; textPaint.isFakeBoldText = true
+        canvas.drawText("NOKIA", width / 2f, height * 0.35f, textPaint)
+        textPaint.color = Color.rgb(80, 200, 80)
+        canvas.drawText("WORMS", width / 2f, height * 0.48f, textPaint)
+        textPaint.textSize = width * 0.045f; textPaint.color = Color.rgb(200, 200, 200)
+        canvas.drawText("TAP TO START", width / 2f, height * 0.65f, textPaint)
+        textPaint.isFakeBoldText = false
+    }
+
+    private fun drawWormSelect(canvas: Canvas) {
+        solidPaint.color = Color.argb(180, 0, 0, 0); solidPaint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), solidPaint)
+        textPaint.textSize = width * 0.06f; textPaint.color = Color.WHITE; textPaint.isFakeBoldText = true
+        val teamName = if (selectingTeam == 0) "RED TEAM" else "BLUE TEAM"
+        canvas.drawText("$teamName — TAP A WORM", width / 2f, height * 0.18f, textPaint)
+        val selWorms = worms.filter { it.team == selectingTeam && it.alive }
+        selWorms.forEachIndexed { i, worm ->
+            val cx = width / 2f + (i - (selWorms.size - 1).toFloat() / 2) * width * 0.22f
+            val cy = height * 0.5f; val r = wormRadius * 2.2f
+            solidPaint.color = if (worm.team == 0) Color.rgb(40, 140, 220) else Color.rgb(220, 60, 60); solidPaint.style = Paint.Style.FILL
+            canvas.drawCircle(cx, cy, r, solidPaint)
+            outlinePaint.color = Color.WHITE; outlinePaint.strokeWidth = 3f; solidPaint.style = Paint.Style.STROKE
+            canvas.drawCircle(cx, cy, r, outlinePaint)
+            textPaint.textSize = r * 0.55f; textPaint.color = Color.WHITE
+            canvas.drawText(worm.name, cx, cy + r * 0.25f, textPaint)
+            val bw = r * 2.6f; val bh = 8f; val bx = cx - bw / 2f; val by = cy + r + 12f
+            solidPaint.color = Color.rgb(40, 40, 40); solidPaint.style = Paint.Style.FILL
+            canvas.drawRoundRect(bx, by, bx + bw, by + bh, 4f, 4f, solidPaint)
+            solidPaint.color = Color.rgb(80, 220, 80); solidPaint.style = Paint.Style.FILL
+            canvas.drawRoundRect(bx, by, bx + bw * (worm.hp / 100f), by + bh, 4f, 4f, solidPaint)
         }
-        // Animate dying worms
-        worms.filter{it.deathAge>=0f}.forEach{ it.deathAge=(it.deathAge+dt/0.9f).coerceAtMost(1f) }
-        updateMovement(dt); updatePhysics(dt)
-        // Update projectiles and cull exploded/dead ones
-        val aliveProj = projectiles.toList()
-        projectiles.clear()
-        aliveProj.forEach { updateProjectile(it, dt) }
-        explosion?.let { updateExplosion(it, dt) }
-        updateMuzzleFlash(dt)
-        updateParticles(dt)
-        if (winnerTeam==null && projectiles.isEmpty() && explosion==null) {
-            if (System.currentTimeMillis()-turnStartedMs>=turnDurationMs) nextTurn()
-            maybeRunAi(); collectCrates()
+        textPaint.isFakeBoldText = false
+    }
+
+    private fun drawGameOver(canvas: Canvas) {
+        solidPaint.color = Color.argb(200, 0, 0, 0); solidPaint.style = Paint.Style.FILL
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), solidPaint)
+        val winner = if (winnerTeam == 0) "RED TEAM" else if (winnerTeam == 1) "BLUE TEAM" else "DRAW"
+        textPaint.textSize = width * 0.09f; textPaint.color = if (winnerTeam == 0) Color.rgb(60, 160, 255) else Color.rgb(255, 80, 80); textPaint.isFakeBoldText = true
+        canvas.drawText(winner, width / 2f, height * 0.30f, textPaint)
+        textPaint.textSize = width * 0.05f; textPaint.color = Color.WHITE
+        canvas.drawText("WINS!", width / 2f, height * 0.40f, textPaint)
+        textPaint.textSize = width * 0.04f; textPaint.color = Color.rgb(200, 200, 200)
+        canvas.drawText("TAP TO RESTART", width / 2f, height * 0.70f, textPaint)
+        textPaint.isFakeBoldText = false
+    }
+
+    private fun drawKillFeed(canvas: Canvas) {
+        killFeed.take(4).forEachIndexed { i, entry ->
+            val alpha = (255 * (1f - entry.age / 4f)).toInt().coerceIn(0, 255)
+            textPaint.textSize = width * 0.038f; textPaint.color = Color.argb(alpha, 255, 200, 80)
+            canvas.drawText(entry.text, width / 2f, height * 0.08f + i * width * 0.05f, textPaint)
         }
     }
 
-    private fun updateMovement(dt: Float) {
-        if (moveInput==0f||projectiles.isNotEmpty()||explosion!=null||winnerTeam!=null) return
-        val worm=worms[activeWormIndex]
-        if (!worm.alive||worm.moveLeft<=0f) return
-        val delta=moveInput*dt*0.12f
-        val nextX=(worm.x+delta).coerceIn(0.04f,0.96f)
-        val currG=groundYAtPx(worm.x*width); val nextG=groundYAtPx(nextX*width)
-        if (abs(nextG-currG)>wormRadius*1.15f) return
-        worm.x=nextX; worm.moveLeft=(worm.moveLeft-abs(delta)*6f).coerceAtLeast(0f)
-        worm.y=groundYAtPx(worm.x*width)-wormRadius
-        if (moveInput>0.01f) { worm.facing=Dir.RIGHT } else if(moveInput<-0.01f) { worm.facing=Dir.LEFT }
-        worm.walkTimer+=dt; if (worm.walkTimer>0.12f) { worm.walkTimer=0f; worm.walkFrame=(worm.walkFrame+1)%12 }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh); terrainDirty = true
     }
-
-    private fun updatePhysics(dt: Float) {
-        worms.filter{it.alive}.forEach { worm ->
-            val targetY=groundYAtPx(worm.x*width)-wormRadius
-            if (worm.y<targetY-1f) {
-                val maxFall = if (worm.parachuteOpen) 55f else 250f
-                val fall=min(targetY-worm.y,dt*maxFall)
-                worm.y+=fall; worm.fallDistance+=fall
-                // Parachute: open when falling fast and not yet at ground
-                if (worm.hasParachute && worm.fallDistance > wormRadius*2f && !worm.parachuteOpen) {
-                    worm.parachuteOpen = true
-                }
-                if (worm.y>=targetY-1f) {
-                    worm.y=targetY
-                    worm.parachuteOpen = false; worm.hasParachute = false
-                    if (worm.fallDistance>36f) {
-                        worm.hp=(worm.hp-((worm.fallDistance-36f)/5f).roundToInt()).coerceAtLeast(0)
-                        if(worm.hp<=0 && worm.alive) { worm.alive=false; worm.deathAge=0f }
-                    }
-                    worm.fallDistance=0f
-                }
-            } else { worm.y=targetY; worm.fallDistance=0f; worm.parachuteOpen=false }
-        }
-        evaluateWinner()
-    }
-
-    private fun updateProjectile(p: Projectile, dt: Float) {
-        p.trail.add(Pair(p.x,p.y))
-        if (p.trail.size>14) p.trail.removeAt(0)
-        p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx+=wind*dt; p.vy+=600f*p.weapon.gravityScale*dt
-        // Timed weapon — count down, explode on fuse regardless of position
-        if (p.weapon.isTimed) {
-            p.timer+=dt
-            if (p.timer>=p.weapon.fuseSecs) { explode(p.x,p.y,p.weapon,p.ownerTeam); return }
-        }
-        // Out of bounds — explode at edge
-        if (p.x<0f||p.x>=width||p.y<-40f||p.y>=height) {
-            explode(p.x.coerceIn(0f,width.toFloat()),p.y.coerceIn(0f,height.toFloat()),p.weapon,p.ownerTeam); return
-        }
-        // Terrain collision
-        if (isTerrainAt(p.x,p.y)) {
-            if (p.weapon.isBouncy && p.bounces<p.weapon.maxBounces) {
-                // Bounce: reflect vy, keep some horizontal, increment bounce counter
-                p.bounces++
-                p.vy=-p.vy*0.42f
-                p.vx*=0.78f
-                // Push out of terrain
-                p.y=(groundYAtPx(p.x)-wormRadius).coerceAtMost(p.y-2f)
-            } else { explode(p.x,p.y,p.weapon,p.ownerTeam); return }
-        }
-        // Hit worm
-        val hit=worms.firstOrNull{it.alive && hypot(it.x*width-p.x,it.y-p.y)<wormRadius*1.25f}
-        if (hit!=null) explode(p.x,p.y,p.weapon,p.ownerTeam)
-    }
-
-    private fun updateExplosion(exp: Explosion, dt: Float) {
-        exp.age+=dt
-        exp.particles.forEach { p ->
-            p.x+=p.vx*dt; p.y+=p.vy*dt
-            p.vy+=180f*dt; p.life+=dt; p.rot+=p.rotSpeed*dt
-        }
-        exp.particles.removeAll { it.life>=it.maxLife }
-        if (exp.age>=0.55f && exp.particles.isEmpty()) explosion=null
-    }
-
-    private fun updateMuzzleFlash(dt: Float) {
-        muzzleFlash?.let { mf ->
-            mf.age+=dt
-            mf.frame=(mf.age/0.04f).toInt()
-            if (mf.frame>=mf.frames.size) muzzleFlash=null
-        }
-    }
-
-    private fun updateParticles(dt: Float) {
-        particles.forEach { p ->
-            p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=160f*dt; p.life+=dt; p.rot+=p.rotSpeed*dt
-        }
-        particles.removeAll { it.life>=it.maxLife }
-    }
-
-    private fun explode(x: Float, y: Float, weapon: Weapon, ownerTeam: Int = -1) {
-        projectiles.removeAll { true }
-        explosion=Explosion(x,y,weapon.radius)
-        shakeIntensity=1.0f; shakeAge=0f; doHaptic(80L)
-        // Spawn particles
-        val pList=weapon.blastParticle ?: circles
-        repeat(14) {
-            val bmp=pList.random()
-            val angle=Random.nextFloat()*PI.toFloat()*2
-            val speed=60f+Random.nextFloat()*200f
-            explosion!!.particles.add(Particle(
-                x=x,y=y,
-                vx=cos(angle)*speed, vy=sin(angle)*speed-80f,
-                bmp=bmp,
-                maxLife=0.35f+Random.nextFloat()*0.45f,
-                size=wormRadius*(0.5f+Random.nextFloat()*1.2f),
-                rot=Random.nextFloat()*360f,
-                rotSpeed=Random.nextFloat()*360f-180f
-            ))
-        }
-        carveTerrain(x,y,weapon.radius); damageWorms(x,y,weapon.radius,weapon.damage,ownerTeam)
-        terrainDirty=false; rebuildTerrainHeight(); snapAllWormsToGround()
-    }
-
-    private fun carveTerrain(cx: Float, cy: Float, radius: Float) {
-        val bmp=terrainBitmap ?: return
-        val left=max(0,(cx-radius).toInt()); val right=min(bmp.width-1,(cx+radius).toInt())
-        val top=max(0,(cy-radius).toInt()); val bottom=min(bmp.height-1,(cy+radius).toInt())
-        for (x in left..right) for (y in top..bottom) {
-            val dx=x-cx; val dy=y-cy
-            if (dx*dx+dy*dy<=radius*radius) bmp.setPixel(x,y,Color.TRANSPARENT)
-        }
-    }
-
-    private fun damageWorms(cx: Float, cy: Float, radius: Float, maxDmg: Int, ownerTeam: Int = -1) {
-        worms.filter{it.alive}.forEach { worm ->
-            val dist=hypot(worm.x*width-cx, worm.y-cy)
-            if (dist<=radius*1.35f) {
-                val dmg=((1f-dist/(radius*1.35f))*maxDmg).roundToInt().coerceAtLeast(6)
-                worm.hp=(worm.hp-dmg).coerceAtLeast(0)
-                // Knockback: push worm away from explosion center
-                if (dist>1f) {
-                    val dx=(worm.x*width-cx)/dist; val dy=(worm.y-cy)/dist
-                    val knockback=((radius*0.6f)*(1f-dist/radius/1.35f)).coerceAtLeast(0f)
-                    worm.x=(worm.x+dx*knockback/width).coerceIn(0.04f,0.96f)
-                    worm.y=(worm.y+dy*knockback).coerceAtLeast(0f)
-                }
-                if (worm.hp<=0 && worm.alive) {
-                    worm.alive=false; worm.deathAge=0f
-                    // Kill feed
-                    val killerTeam=if(ownerTeam>=0) ownerTeam else -1
-                    val msg=when {
-                        killerTeam<0 -> "${worm.name} fell off!"
-                        killerTeam!=worm.team -> "${if(killerTeam==0)"α" else "β"} team eliminated ${worm.name}"
-                        else -> "${worm.name} self-destructed"
-                    }
-                    killFeed.add(KillEntry(msg)); if(killFeed.size>5) killFeed.removeAt(0)
-                    // Death burst particles
-                    repeat(10) {
-                        val bmp=(circles+dirts).random()
-                        val angle=Random.nextFloat()*PI.toFloat()*2
-                        val speed=80f+Random.nextFloat()*160f
-                        particles.add(Particle(
-                            x=worm.x*width, y=worm.y,
-                            vx=cos(angle)*speed, vy=sin(angle)*speed-120f,
-                            bmp=bmp, maxLife=0.6f+Random.nextFloat()*0.4f,
-                            size=wormRadius*(0.4f+Random.nextFloat()*0.8f),
-                            rot=Random.nextFloat()*360f, rotSpeed=Random.nextFloat()*360f-180f
-                        ))
-                    }
-                }
-            }
-        }
-    }
-
-    private fun nextTurn() {
-        moveInput=0f; charging=false; aimActive=false
-        val curTeam=activeTeam(); val nextTeam=if(winnerTeam==null) 1-curTeam else curTeam
-        val aliveOnTeam=worms.filter{it.alive && it.team==nextTeam}
-        if (aliveOnTeam.size>1 && mode!=GameMode.GAME_OVER) {
-            // Show worm selection screen
-            selectingTeam=nextTeam; mode=GameMode.SELECT_WORM
-            aiSelectAt = if(selectingTeam==1 && mode==GameMode.PVE) System.currentTimeMillis()+1200L else 0L
-            turnFlashAge=0f; return
-        }
-        activeWormIndex=nextAliveWormIndex(nextTeam)
-        activateCurrentWorm()
-    }
-
-    private fun activateCurrentWorm() {
-        val worm=worms[activeWormIndex]
-        worm.moveLeft=1f; worm.jumpsLeft=1
-        angleDeg=if(worm.team==0) 45f else 50f; power=0.62f
-        wind=randomWind(); turnStartedMs=System.currentTimeMillis(); aiFireAt=0L
-        lastFireMs=0L; turnFlashAge=0f
-    }
-
-    private fun nextAliveWormIndex(team: Int): Int {
-        val start=(activeWormIndex+1)%worms.size
-        for (offset in worms.indices) {
-            val idx=(start+offset)%worms.size
-            if (worms[idx].alive && worms[idx].team==team) return idx
-        }
-        return worms.indexOfFirst{it.alive}.coerceAtLeast(0)
-    }
-
-    private fun maybeRunAi() {
-        if (mode!=GameMode.PVE||activeTeam()!=1||projectiles.isNotEmpty()||
-            explosion!=null||winnerTeam!=null) return
-        val now=System.currentTimeMillis()
-        if (aiFireAt==0L) { aiFireAt=now+900L; chooseAiTurn(); return }
-        if (now>=aiFireAt) { fireCurrentWeapon(); aiFireAt=0L }
-    }
-
-    private fun chooseAiTurn() {
-        val shooter=worms[activeWormIndex]
-        val targets=worms.filter{it.alive && it.team!=shooter.team}
-        if (targets.isEmpty()) return
-        // Pick a random target for unpredictability
-        val target=targets.random()
-        val dx=(target.x-shooter.x)*width
-        val dy=target.y-shooter.y
-        val dist=hypot(dx,dy)
-        // Pick weapon with ammo, prefer appropriate weapon for distance
-        val preferredForDist=when {
-            dist>width*0.40f-> listOf(2,0,5)  // Missile, Bazooka, Dynamite
-            dist>width*0.22f-> listOf(0,1,3)  // Bazooka, Grenade, Mortar
-            dist<width*0.14f-> listOf(4,1,3)  // Shotgun, Grenade, Mortar (close)
-            else-> listOf(3,1,5)               // Mortar, Grenade, Dynamite
-        }
-        selectedWeapon=preferredForDist.firstOrNull{ weaponAmmo[it]>0 }
-            ?: (0 until weapons.size).firstOrNull{ weaponAmmo[it]>0 } ?: 0
-        val wpn=weapons[selectedWeapon]
-        // Lead the target: aim slightly ahead based on wind and distance
-        val windBonus=(wind/42f)*(dist/width)*12f
-        angleDeg=Math.toDegrees(atan2(dy.toDouble(),dx.toDouble().coerceAtLeast(1.0))).toFloat()
-            .coerceIn(8f,84f)+(if(dx<0) 180f else 0f)
-        angleDeg=angleDeg.coerceIn(8f,84f)
-        // Power based on distance and weapon gravity
-        val basePower=(dist/(wpn.speed*0.68f)).coerceIn(0.30f,1.0f)
-        power=(basePower+(Random.nextFloat()-0.5f)*0.10f).coerceIn(0.30f,1.0f)
-        // Small chance to jump/toggle parachute
-        if (Random.nextFloat()<0.18f && shooter.jumpsLeft>0) jumpCurrentWorm()
-        else if (Random.nextFloat()<0.10f && shooter.hasParachute) { shooter.parachuteOpen=!shooter.parachuteOpen }
-    }
-
-    private fun collectCrates() {
-        val active=worms[activeWormIndex]
-        crates.filter{it.active}.forEach { crate ->
-            if (hypot(active.x*width-crate.x,active.y-crate.y)<=wormRadius+crateSize*0.55f) {
-                crate.active=false
-                when(crate.type) {
-                    CrateType.HEALTH->active.hp=(active.hp+25).coerceAtMost(100)
-                    CrateType.WEAPON->selectedWeapon=(selectedWeapon+1)%weapons.size
-                }
-            }
-        }
-    }
-
-    private fun maybeSpawnCrates() {
-        if (crates.isNotEmpty()) return
-        listOf(Pair(width*0.45f,CrateType.HEALTH),Pair(width*0.57f,CrateType.WEAPON))
-            .forEach { (x,type)->crates.add(SupplyCrate(x,groundYAtPx(x)-crateSize/2f,type)) }
-    }
-
-    private fun evaluateWinner() {
-        val aliveA=worms.any{it.alive && it.team==0}
-        val aliveB=worms.any{it.alive && it.team==1}
-        winnerTeam=when {
-            aliveA&&aliveB->null; aliveA->0; aliveB->1
-            else->1-activeTeam()
-        }
-        if (winnerTeam!=null) mode=GameMode.GAME_OVER
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        val w=width.toFloat().coerceAtLeast(1f); val h=height.toFloat().coerceAtLeast(1f)
-        if (mode==GameMode.TITLE) {
-            if (event.action==MotionEvent.ACTION_DOWN)
-                mode=if(event.y<h*0.62f) GameMode.PVE else GameMode.PVP
-            return true
-        }
-        if (winnerTeam!=null || mode==GameMode.GAME_OVER) {
-            if(event.action==MotionEvent.ACTION_DOWN) { mode=GameMode.TITLE; killFeed.clear() }
-            return true
-        }
-        if (mode==GameMode.SELECT_WORM) {
-            if (event.action==MotionEvent.ACTION_DOWN) {
-                val tx=event.x; val ty=event.y
-                for (i in worms.indices) {
-                    val w=worms[i]
-                    if (!w.alive || w.team!=selectingTeam) continue
-                    val cx=w.x*width; val cy=w.y
-                    if (hypot(tx-cx,ty-cy)<wormRadius*2f) {
-                        activeWormIndex=i; mode=GameMode.PVE; activateCurrentWorm(); break
-                    }
-                }
-            }
-            return true
-        }
-        if (projectiles.isNotEmpty()||explosion!=null) return true
-        if (mode==GameMode.PVE && activeTeam()==1) return true
-
-        val jp=jumpRect(w,h); val wp=weaponRect(w,h); val fr=fireRect(w,h); val ar=aimRect(w,h)
-        val action=event.actionMasked
-        val pid=event.getPointerId(event.actionIndex)
-
-        // ── Handle each pointer ────────────────────────────────────────────
-        // Slingshot aiming: any touch outside buttons starts aiming
-        // Drag = set angle (direction from worm to touch) + power (distance from worm)
-        // Release = fire
-        when(action) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                val x=event.getX(event.findPointerIndex(pid))
-                val y=event.getY(event.findPointerIndex(pid))
-                val inJoystick = movePadRect(w,h).contains(x,y)
-                val inJump = jp.contains(x,y)
-                val inWeapon = wp.contains(x,y)
-                val inFire = fr.contains(x,y)
-
-                if (!joystickActive && inJoystick) {
-                    // Joystick touch
-                    joystickActive=true; joystickPointerId=pid
-                    val mp=movePadRect(w,h); joystickCenterX=mp.centerX(); joystickCenterY=mp.centerY()
-                    joystickTouchX=x; joystickTouchY=y; updateJoystick()
-                } else if (!inJoystick && !inJump && !inWeapon && !inFire) {
-                    // Slingshot aim start: touch outside all buttons
-                    aimPointerId=pid; aimStartX=x; aimStartY=y; isSlingshotAiming=true
-                    updateSlingshotAim(x, y)
-                } else if (inJump) jumpCurrentWorm()
-                else if (inWeapon) selectedWeapon=(selectedWeapon+1)%weapons.size
-                else if (inFire) fireCurrentWeapon()
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (joystickActive) {
-                    val idx=event.findPointerIndex(joystickPointerId)
-                    if (idx>=0) { joystickTouchX=event.getX(idx); joystickTouchY=event.getY(idx); updateJoystick() }
-                }
-                if (isSlingshotAiming && aimPointerId>=0) {
-                    val idx=event.findPointerIndex(aimPointerId)
-                    if (idx>=0) updateSlingshotAim(event.getX(idx), event.getY(idx))
-                }
-            }
-
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                if (pid==joystickPointerId) {
-                    joystickActive=false; joystickPointerId=-1; moveInput=0f
-                }
-                if (pid==aimPointerId) {
-                    if (isSlingshotAiming) fireCurrentWeapon()
-                    isSlingshotAiming=false; aimPointerId=-1
-                }
-            }
-        }
-        invalidate(); return true
-    }
-
-    private fun updateSlingshotAim(tx: Float, ty: Float) {
-        val worm=worms.getOrNull(activeWormIndex) ?: return
-        if (!worm.alive) return
-        val wx=worm.x*width; val wy=worm.y
-        val dx=tx-wx; val dy=ty-wy
-        val dist=hypot(dx,dy).coerceAtLeast(1f)
-        // Power from drag distance (max 250px = full power)
-        power=(dist/250f).coerceIn(0.18f, 1.0f)
-        // Angle: drag direction determines angle. If worm faces right:
-        // drag RIGHT-UP = aim up-right, drag LEFT-DOWN = aim down-left (backward)
-        val rawAngle=Math.toDegrees(atan2((-dy).toDouble(), dx.toDouble().coerceAtLeast(1.0))).toFloat().coerceIn(8f, 84f)
-        // For left-facing team, flip: drag RIGHT-UP = aim up-left (backward)
-        angleDeg=if(worm.facing==Dir.LEFT) (180f-rawAngle).coerceIn(8f,172f) else rawAngle
-        aimActive=true
-    }
-
-    private fun updateJoystick() {
-        if (!joystickActive) return
-        val dx=joystickTouchX-joystickCenterX; val dy=joystickTouchY-joystickCenterY
-        val dist=hypot(dx,dy).coerceAtLeast(1f)
-        val clampedDist=min(dist,joystickRadius)
-        moveInput=(clampedDist/joystickRadius)*(dx/dist).coerceIn(-1f,1f)
-        // Update worm facing direction from joystick X
-        val worm=worms.getOrNull(activeWormIndex) ?: return
-        if (moveInput>0.05f) worm.facing=Dir.RIGHT else if(moveInput<-0.05f) worm.facing=Dir.LEFT
-    }
-
-    private fun updateAimFromJoystick(tx: Float, ty: Float) {
-        val worm=worms[activeWormIndex]; if(!worm.alive) return
-        // Angle: vertical delta from touch start to worm
-        val dy=(worm.y-wormRadius)-ty
-        // Horizontal delta from touch start determines power
-        val powerDx=(tx-aimStartX)
-        val dir=if(worm.team==0) 1f else -1f
-        // Angle: 0°=flat, 90°=straight up
-        angleDeg=Math.toDegrees(atan2(dy.toDouble().coerceAtLeast(1.0), abs(powerDx).toDouble().coerceAtLeast(1.0))).toFloat().coerceIn(8f,84f)
-        // Power from horizontal displacement
-        power=(abs(powerDx)/(width*0.32f)).coerceIn(0.18f,1f)
-    }
-
-    private fun updateAim(tx: Float, ty: Float) {
-        val worm=worms[activeWormIndex]
-        val dx=tx-worm.x*width; val dy=(worm.y-wormRadius)-ty
-        val facingDx=if(worm.team==0) dx.coerceAtLeast(1f) else (-dx).coerceAtLeast(1f)
-        angleDeg=Math.toDegrees(atan2(dy.toDouble(),facingDx.toDouble())).toFloat().coerceIn(8f,84f)
-        if (charging) power=(hypot(dx,(worm.y-wormRadius)-ty)/(width*0.42f)).coerceIn(0.18f,1f)
-    }
-
-    private fun jumpCurrentWorm() {
-        val worm=worms[activeWormIndex]
-        if (!worm.alive) return
-        val inAir = worm.y < groundYAtPx(worm.x*width)-wormRadius-2f
-        if (inAir) {
-            // Open parachute if not yet open
-            if (!worm.parachuteOpen && worm.hasParachute) { worm.parachuteOpen = true; return }
-            return
-        }
-        if (worm.jumpsLeft<=0) return
-        worm.x=(worm.x+0.04f*(if(worm.team==0) 1f else -1f)).coerceIn(0.04f,0.96f)
-        worm.y-=wormRadius*1.4f; worm.jumpsLeft--; worm.moveLeft=(worm.moveLeft-0.25f).coerceAtLeast(0f)
-        worm.hasParachute=true; worm.parachuteOpen=false
-    }
-
-    private fun fireCurrentWeapon() {
-        val worm=worms[activeWormIndex]; if (!worm.alive) return
-        // Auto-skip weapons with no ammo
-        if (weaponAmmo[selectedWeapon] <= 0) {
-            val next = (selectedWeapon+1 until weapons.size).firstOrNull { weaponAmmo[it] > 0 }
-                ?: (0 until selectedWeapon).firstOrNull { weaponAmmo[it] > 0 }
-            if (next != null) selectedWeapon = next else return
-        }
-        val wpn=weapons[selectedWeapon]; val dir=if(worm.team==0) 1f else -1f
-        // Check cooldown
-        if (cooldownRemaining > 0L) return
-        val rad=Math.toRadians(angleDeg.toDouble())
-        val baseX=worm.x*width; val baseY=worm.y-wormRadius
-        // Shotgun: fire pellets in a spread
-        if (wpn.pellets > 1) {
-            for (p in 0 until wpn.pellets) {
-                val spread = (p - wpn.pellets/2f) * 0.10f
-                val pRad = rad + spread.toDouble()
-                val pSpeed = wpn.speed * power
-                projectiles.add(Projectile(baseX, baseY,
-                    (cos(pRad)*pSpeed*dir).toFloat(),
-                    (-sin(pRad)*pSpeed).toFloat(), wpn, worm.team,
-                    timer=if(wpn.isTimed) 0f else -1f, bounces=0))
-            }
-            if (projectiles.isEmpty()) projectiles.add(Projectile(baseX,baseY,
-                (cos(rad)*wpn.speed*power*dir).toFloat(),
-                (-sin(rad)*wpn.speed*power).toFloat(),wpn,worm.team,
-                timer=if(wpn.isTimed) 0f else -1f, bounces=0))
-        } else {
-            projectiles.add(Projectile(baseX,baseY,
-                (cos(rad)*wpn.speed*power*dir).toFloat(),
-                (-sin(rad)*wpn.speed*power).toFloat(),wpn,worm.team,
-                timer=if(wpn.isTimed) 0f else -1f, bounces=0))
-        }
-        weaponAmmo[selectedWeapon]--
-        lastFireMs = System.currentTimeMillis()
-        // Muzzle flash
-        muzzles?.let { mfs ->
-            if (mfs.isNotEmpty()) {
-                muzzleFlash=MuzzleFlash(worm.x*width,worm.y-wormRadius,
-                    angleDeg+if(worm.team==1) 180f else 0f, mfs)
-            }
-        }
-        lastFrameNanos=System.nanoTime(); doHaptic(40L); invalidate()
-    }
-
-    private fun activeTeam()=worms.getOrNull(activeWormIndex)?.team ?: 0
-
-    private fun snapAllWormsToGround() {
-        worms.filter{it.alive}.forEach{ worm->worm.y=groundYAtPx(worm.x*width)-wormRadius }
-    }
-
-    private fun groundYAtPx(px: Float): Float {
-        if (terrainHeight.isEmpty()) return height*0.70f
-        val idx=px.roundToInt().coerceIn(0,terrainHeight.lastIndex)
-        return terrainHeight[idx].toFloat()
-    }
-
-    private fun isTerrainAt(x: Float, y: Float): Boolean {
-        val bmp=terrainBitmap ?: return false
-        val ix=x.roundToInt().coerceIn(0,bmp.width-1); val iy=y.roundToInt().coerceIn(0,bmp.height-1)
-        return Color.alpha(bmp.getPixel(ix,iy))>0
-    }
-
-    // New optimized control layout:
-    // - Bottom-left: virtual joystick (MOVE)
-    // - Right side: FIRE (large), WEAPON, JUMP stacked
-    // - Upper-right area: AIM zone
-    private val joystickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(100, 100, 100, 200); style = Paint.Style.FILL
-    }
-    private val joystickKnobPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(180, 200, 200, 255); style = Paint.Style.FILL
-    }
-    private val joystickBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(160, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 3f
-    }
-    private val fireBtnPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(230, 80, 30); style = Paint.Style.FILL
-    }
-    private val fireBtnBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(255, 140, 60); style = Paint.Style.STROKE; strokeWidth = 3f
-    }
-    // Track joystick state
-    private var joystickActive = false
-    private var joystickPointerId = -1
-    private var joystickCenterX = 0f
-    private var joystickCenterY = 0f
-    private var joystickTouchX = 0f
-    private var joystickTouchY = 0f
-    private val joystickRadius = 70f   // outer radius
-    private val joystickKnobRadius = 28f // inner knob radius
-    // Track aim state
-    private var aimPointerId = -1
-    private var aimStartX = 0f
-    private var aimStartY = 0f
-    // Slingshot aiming state
-    private var isSlingshotAiming = false
-
-    private fun movePadRect(w: Float, h: Float) = RectF(20f, h-200f, 20f+joystickRadius*2, h-200f+joystickRadius*2)
-    private fun jumpRect(w: Float, h: Float)   = RectF(w-135f, h-350f, w-20f, h-270f)
-    private fun weaponRect(w: Float, h: Float) = RectF(w-135f, h-260f, w-20f, h-180f)
-    private fun fireRect(w: Float, h: Float)   = RectF(w-135f, h-170f, w-20f, h-80f)
-    private fun aimRect(w: Float, h: Float)    = RectF(w*0.38f, 190f, w-20f, h-365f)
-
-    private fun randomWind()=Random.nextFloat()*84f-42f
-
-    private fun loadBitmap(path: String): Bitmap? = runCatching {
-        context.assets.open(path).use { BitmapFactory.decodeStream(it) }
-    }.getOrNull()
 }
