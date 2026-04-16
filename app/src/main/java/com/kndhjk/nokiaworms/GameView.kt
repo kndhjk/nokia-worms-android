@@ -12,8 +12,11 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.os.VibrationEffect
+import android.os.Vibrator
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -90,7 +93,7 @@ class GameView(context: Context) : View(context) {
     }
 
     // ── Game state ───────────────────────────────────────────────────────────
-    private enum class GameMode { TITLE, PVP, PVE }
+    private enum class GameMode { TITLE, PVP, PVE, SELECT_WORM, GAME_OVER }
     private enum class CrateType { HEALTH, WEAPON }
     private enum class Dir { LEFT, RIGHT }
 
@@ -196,8 +199,22 @@ class GameView(context: Context) : View(context) {
         Paint(Paint.ANTI_ALIAS_FLAG).apply{color=Color.argb(50,240,240,255)}
     )
     private var cloudOffset = 0f
+    // Haptic feedback
+    private val vibrator: Vibrator? by lazy { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
+    private fun doHaptic(durationMs: Long) {
+        vibrator?.let { v ->
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+                v.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+            else @Suppress("DEPRECATION") v.vibrate(durationMs)
+        }
+        // Also use view haptic
+        @Suppress("DEPRECATION") performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
 
     private val turnDurationMs get() = 25_000L
+    // Worm selection
+    private var selectingTeam = 0
+    private var aiSelectAt = 0L
     private val wormRadius get() = max(18f, width * 0.026f)
     private val crateSize get() = wormRadius * 1.45f
 
@@ -216,11 +233,12 @@ class GameView(context: Context) : View(context) {
         )
         activeWormIndex = 0; selectedWeapon = 0; angleDeg = 45f; power = 0.62f
         wind = randomWind(); winnerTeam = null; projectiles.clear(); explosion = null
-        muzzleFlash = null; particles.clear(); crates.clear()
+        muzzleFlash = null; particles.clear(); crates.clear(); killFeed.clear()
         lastFrameNanos = System.nanoTime(); turnStartedMs = System.currentTimeMillis()
         aiFireAt = 0L; terrainDirty = true; terrainBitmap = null; terrainCanvas = null
         terrainHeight = IntArray(0); bulletOffset = 0f; frameCount = 0
         weaponAmmo = IntArray(weapons.size) { weapons[it].ammo }
+        mode = GameMode.TITLE
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -234,6 +252,14 @@ class GameView(context: Context) : View(context) {
         canvas.save(); canvas.translate(shakeX,shakeY)
         drawBackground(canvas, w, h); drawTerrain(canvas)
         if (mode == GameMode.TITLE) drawTitle(canvas, w, h)
+        else if (mode == GameMode.SELECT_WORM) {
+            drawParticles(canvas); drawCrates(canvas); drawWorms(canvas)
+            drawWormSelect(canvas, w, h)
+        }
+        else if (mode == GameMode.GAME_OVER) {
+            drawParticles(canvas); drawCrates(canvas); drawWorms(canvas)
+            drawGameOver(canvas, w, h)
+        }
         else {
             drawParticles(canvas)
             drawCrates(canvas); drawWorms(canvas)
@@ -610,7 +636,72 @@ class GameView(context: Context) : View(context) {
         canvas.drawText("Wind ${"%+.1f".format(wind/18f)}",x-8f,y-12f,hudSubText)
     }
 
-    // ── Kill feed (top-center) ────────────────────────────────────────────────
+    // ── Worm selection screen ─────────────────────────────────────────────────
+    private fun drawWormSelect(canvas: Canvas, w: Float, h: Float) {
+        // Dim overlay
+        canvas.drawRect(0f,0f,w,h, Paint().apply{color=Color.argb(160,0,0,0)})
+        // Panel
+        val panel=RectF(w*0.10f,h*0.20f,w*0.90f,h*0.75f)
+        canvas.drawRoundRect(panel,20f,20f, Paint().apply{color=Color.rgb(30,30,30)})
+        canvas.drawRoundRect(panel,20f,20f, Paint().apply{color=Color.rgb(100,100,100);style=Paint.Style.STROKE;strokeWidth=3f})
+        val teamLabel=if(selectingTeam==0) "Team α — Choose Your Worm" else if(mode==GameMode.PVE) "AI β — Selecting..." else "Team β — Choose Your Worm"
+        canvas.drawText(teamLabel,w/2f,h*0.28f,
+            Paint().apply{color=Color.WHITE;textSize=28f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+        // Draw each alive worm of the selecting team
+        worms.filter{it.alive && it.team==selectingTeam}.forEach{ worm ->
+            val cx=worm.x*width; val cy=h*0.50f
+            val r=wormRadius*1.8f
+            // Worm circle
+            val bgPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
+                color=Color.argb(200, if(worm.team==0) 255 else 80, if(worm.team==0) 150 else 225, if(worm.team==0) 70 else 110)
+            }
+            canvas.drawCircle(cx,cy,r,bgPaint)
+            canvas.drawCircle(cx,cy,r, Paint().apply{color=Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2.5f})
+            wormSprite?.let{ canvas.drawBitmap(it,null, RectF(cx-r,cy-r,cx+r,cy+r),null) }
+            canvas.drawText(worm.name,cx,cy+r*1.6f,
+                Paint().apply{color=Color.WHITE;textSize=22f;textAlign=Paint.Align.CENTER})
+            canvas.drawText("HP: ${worm.hp}",cx,cy+r*1.6f+24f,
+                Paint().apply{color=Color.rgb(180,220,180);textSize=18f;textAlign=Paint.Align.CENTER})
+        }
+        canvas.drawText("Tap a worm to select",w/2f,h*0.70f,
+            Paint().apply{color=Color.rgb(180,180,180);textSize=20f;textAlign=Paint.Align.CENTER})
+    }
+
+    // ── Game over screen ──────────────────────────────────────────────────────
+    private fun drawGameOver(canvas: Canvas, w: Float, h: Float) {
+        canvas.drawRect(0f,0f,w,h, Paint().apply{color=Color.argb(180,0,0,0)})
+        val panel=RectF(w*0.08f,h*0.12f,w*0.92f,h*0.85f)
+        canvas.drawRoundRect(panel,24f,24f, Paint().apply{color=Color.rgb(25,25,35)})
+        canvas.drawRoundRect(panel,24f,24f, Paint().apply{color=Color.rgb(120,120,180);style=Paint.Style.STROKE;strokeWidth=3f})
+        val winTeam=winnerTeam ?: return
+        val winLabel=when{mode==GameMode.PVE && winTeam==1->"AI β WINS!"; winTeam==0->"Team α Wins!"; else->"Team β Wins!"}
+        val winColor=if(winTeam==0) Color.rgb(255,180,80) else Color.rgb(80,255,130)
+        canvas.drawText(winLabel,w/2f,h*0.23f,
+            Paint().apply{color=winColor;textSize=40f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+        // Stats
+        val aliveA=worms.filter{it.team==0}.map{it.name+" HP:"+it.hp}.joinToString("  ")
+        val aliveB=worms.filter{it.team==1}.map{it.name+" HP:"+it.hp}.joinToString("  ")
+        canvas.drawText("Team α: $aliveA",w/2f,h*0.36f,
+            Paint().apply{color=Color.rgb(255,200,120);textSize=20f;textAlign=Paint.Align.CENTER})
+        canvas.drawText("Team β: $aliveB",w/2f,h*0.43f,
+            Paint().apply{color=Color.rgb(130,220,150);textSize=20f;textAlign=Paint.Align.CENTER})
+        // Kill feed summary
+        if (killFeed.isNotEmpty()) {
+            canvas.drawText("Recent events:",w/2f,h*0.52f,
+                Paint().apply{color=Color.rgb(160,160,160);textSize=18f;textAlign=Paint.Align.CENTER})
+            killFeed.takeLast(4).forEachIndexed { i, entry ->
+                canvas.drawText(entry.text,w/2f,h*0.57f+i*26f,
+                    Paint().apply{color=Color.rgb(220,200,160);textSize=17f;textAlign=Paint.Align.CENTER})
+            }
+        }
+        // Restart button
+        val btn=RectF(w*0.25f,h*0.72f,w*0.75f,h*0.80f)
+        canvas.drawRoundRect(btn,16f,16f, Paint().apply{color=Color.rgb(60,100,200)})
+        canvas.drawRoundRect(btn,16f,16f, Paint().apply{color=Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2f})
+        canvas.drawText("TAP TO RESTART",btn.centerX(),btn.centerY()+8f,
+            Paint().apply{color=Color.WHITE;textSize=22f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+    }
+
     private fun drawKillFeed(canvas: Canvas, w: Float) {
         if (killFeed.isEmpty()) return
         val feedTop = 196f; val lineH = 28f
@@ -773,6 +864,15 @@ class GameView(context: Context) : View(context) {
         killFeed.removeAll { it.age > 4.0f }
         // Update clouds
         cloudOffset += dt * 6f
+        // Auto AI worm selection
+        if (mode==GameMode.SELECT_WORM && aiSelectAt>0L && System.currentTimeMillis()>=aiSelectAt) {
+            val candidates=worms.filter{it.alive && it.team==1}
+            if (candidates.isNotEmpty()) {
+                val chosen=candidates.random()
+                activeWormIndex=worms.indexOf(chosen)
+                aiSelectAt=0L; mode=GameMode.PVE; activateCurrentWorm()
+            }
+        }
         // Animate dying worms
         worms.filter{it.deathAge>=0f}.forEach{ it.deathAge=(it.deathAge+dt/0.9f).coerceAtMost(1f) }
         updateMovement(dt); updatePhysics(dt)
@@ -885,7 +985,7 @@ class GameView(context: Context) : View(context) {
     private fun explode(x: Float, y: Float, weapon: Weapon, ownerTeam: Int = -1) {
         projectiles.removeAll { true }
         explosion=Explosion(x,y,weapon.radius)
-        shakeIntensity=1.0f; shakeAge=0f
+        shakeIntensity=1.0f; shakeAge=0f; doHaptic(80L)
         // Spawn particles
         val pList=weapon.blastParticle ?: circles
         repeat(14) {
@@ -922,6 +1022,13 @@ class GameView(context: Context) : View(context) {
             if (dist<=radius*1.35f) {
                 val dmg=((1f-dist/(radius*1.35f))*maxDmg).roundToInt().coerceAtLeast(6)
                 worm.hp=(worm.hp-dmg).coerceAtLeast(0)
+                // Knockback: push worm away from explosion center
+                if (dist>1f) {
+                    val dx=(worm.x*width-cx)/dist; val dy=(worm.y-cy)/dist
+                    val knockback=((radius*0.6f)*(1f-dist/radius/1.35f)).coerceAtLeast(0f)
+                    worm.x=(worm.x+dx*knockback/width).coerceIn(0.04f,0.96f)
+                    worm.y=(worm.y+dy*knockback).coerceAtLeast(0f)
+                }
                 if (worm.hp<=0 && worm.alive) {
                     worm.alive=false; worm.deathAge=0f
                     // Kill feed
@@ -953,13 +1060,23 @@ class GameView(context: Context) : View(context) {
     private fun nextTurn() {
         moveInput=0f; charging=false; aimActive=false
         val curTeam=activeTeam(); val nextTeam=if(winnerTeam==null) 1-curTeam else curTeam
+        val aliveOnTeam=worms.filter{it.alive && it.team==nextTeam}
+        if (aliveOnTeam.size>1 && mode!=GameMode.GAME_OVER) {
+            // Show worm selection screen
+            selectingTeam=nextTeam; mode=GameMode.SELECT_WORM
+            aiSelectAt = if(selectingTeam==1 && mode==GameMode.PVE) System.currentTimeMillis()+1200L else 0L
+            turnFlashAge=0f; return
+        }
         activeWormIndex=nextAliveWormIndex(nextTeam)
+        activateCurrentWorm()
+    }
+
+    private fun activateCurrentWorm() {
         val worm=worms[activeWormIndex]
         worm.moveLeft=1f; worm.jumpsLeft=1
         angleDeg=if(worm.team==0) 45f else 50f; power=0.62f
         wind=randomWind(); turnStartedMs=System.currentTimeMillis(); aiFireAt=0L
-        lastFireMs=0L  // reset fire cooldown
-        turnFlashAge=0f  // trigger turn flash
+        lastFireMs=0L; turnFlashAge=0f
     }
 
     private fun nextAliveWormIndex(team: Int): Int {
@@ -1037,6 +1154,7 @@ class GameView(context: Context) : View(context) {
             aliveA&&aliveB->null; aliveA->0; aliveB->1
             else->1-activeTeam()
         }
+        if (winnerTeam!=null) mode=GameMode.GAME_OVER
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -1046,7 +1164,24 @@ class GameView(context: Context) : View(context) {
                 mode=if(event.y<h*0.62f) GameMode.PVE else GameMode.PVP
             return true
         }
-        if (winnerTeam!=null) { if(event.action==MotionEvent.ACTION_DOWN) mode=GameMode.TITLE; return true }
+        if (winnerTeam!=null || mode==GameMode.GAME_OVER) {
+            if(event.action==MotionEvent.ACTION_DOWN) { mode=GameMode.TITLE; killFeed.clear() }
+            return true
+        }
+        if (mode==GameMode.SELECT_WORM) {
+            if (event.action==MotionEvent.ACTION_DOWN) {
+                val tx=event.x; val ty=event.y
+                for (i in worms.indices) {
+                    val w=worms[i]
+                    if (!w.alive || w.team!=selectingTeam) continue
+                    val cx=w.x*width; val cy=w.y
+                    if (hypot(tx-cx,ty-cy)<wormRadius*2f) {
+                        activeWormIndex=i; mode=GameMode.PVE; activateCurrentWorm(); break
+                    }
+                }
+            }
+            return true
+        }
         if (projectiles.isNotEmpty()||explosion!=null) return true
         if (mode==GameMode.PVE && activeTeam()==1) return true
 
@@ -1192,7 +1327,7 @@ class GameView(context: Context) : View(context) {
                     angleDeg+if(worm.team==1) 180f else 0f, mfs)
             }
         }
-        lastFrameNanos=System.nanoTime(); invalidate()
+        lastFrameNanos=System.nanoTime(); doHaptic(40L); invalidate()
     }
 
     private fun activeTeam()=worms.getOrNull(activeWormIndex)?.team ?: 0
