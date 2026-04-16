@@ -202,13 +202,15 @@ class GameView(context: Context) : View(context) {
     // Haptic feedback
     private val vibrator: Vibrator? by lazy { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
     private fun doHaptic(durationMs: Long) {
-        vibrator?.let { v ->
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
-                v.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
-            else @Suppress("DEPRECATION") v.vibrate(durationMs)
-        }
-        // Also use view haptic
-        @Suppress("DEPRECATION") performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        try {
+            vibrator?.let { v ->
+                if (v.hasVibrator()) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+                        v.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+                    else @Suppress("DEPRECATION") v.vibrate(durationMs)
+                }
+            }
+        } catch (_: Exception) { }
     }
 
     private val turnDurationMs get() = 25_000L
@@ -292,20 +294,25 @@ class GameView(context: Context) : View(context) {
             for(x in 1 until width) lineTo(x.toFloat(),sampleTerrainY(x.toFloat()))
             lineTo(width.toFloat(),height.toFloat()); close()
         }
-        canvas.drawPath(path, terrainPaint)
-        tileDirtPaint.shader?.let {
-            canvas.save(); canvas.clipPath(path)
-            canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),tileDirtPaint); canvas.restore()
-        }
+        // Draw dirt with vertical gradient (reliable, no tile artifacts)
+        val dirtGrad = android.graphics.LinearGradient(0f, height*0.35f, 0f, height.toFloat(),
+            Color.rgb(120, 82, 48), Color.rgb(72, 48, 28), android.graphics.Shader.TileMode.CLAMP)
+        val dirtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = dirtGrad }
+        canvas.save(); canvas.clipPath(path)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dirtPaint)
+        canvas.restore()
+        // Grass strip on top with gradient
+        val grassGrad = android.graphics.LinearGradient(0f, height*0.30f, 0f, height*0.38f,
+            Color.rgb(110, 180, 75), Color.rgb(80, 140, 50), android.graphics.Shader.TileMode.CLAMP)
+        val grassBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = grassGrad }
         val gPath = Path().apply {
-            moveTo(0f,sampleTerrainY(0f)-5f)
-            for(x in 2 until width step 2) lineTo(x.toFloat(),sampleTerrainY(x.toFloat())-5f)
+            moveTo(0f,sampleTerrainY(0f)-6f)
+            for(x in 1 until width) lineTo(x.toFloat(),sampleTerrainY(x.toFloat())-6f)
+            lineTo(width.toFloat(),height.toFloat()); lineTo(0f,height.toFloat()); close()
         }
-        canvas.drawPath(gPath, grassPaint)
-        tileGrassPaint.shader?.let {
-            canvas.save(); canvas.clipPath(gPath)
-            canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),tileGrassPaint); canvas.restore()
-        }
+        canvas.save(); canvas.clipPath(gPath)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), grassBg)
+        canvas.restore()
         rebuildTerrainHeight(); snapAllWormsToGround(); maybeSpawnCrates()
         terrainDirty = false
     }
@@ -827,26 +834,29 @@ class GameView(context: Context) : View(context) {
         canvas.drawText(jumpLabel,jp.centerX(),jp.centerY()+8f,
             Paint().apply{color=Color.DKGRAY;textSize=22f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
 
-        // ── Aim zone ───────────────────────────────────────────────────────────
-        // Dashed border hint
-        val aimBorder=Paint().apply{
-            color=if(aimActive) Color.argb(160,255,200,80) else Color.argb(80,255,255,255)
-            style=Paint.Style.STROKE;strokeWidth=2f
-        }
-        canvas.drawRoundRect(ar,12f,12f,aimBorder)
-        canvas.drawText("DRAG AIM · POWER=L/R",ar.centerX(),ar.centerY()+8f,
-            Paint().apply{color=Color.argb(100,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
-        // Angle indicator arc inside aim zone
+        // ── Slingshot aim indicator (centered on active worm) ────────────────
         val worm=worms.getOrNull(activeWormIndex) ?: return
+        val wx=worm.x*width; val wy=worm.y
+        // Angle arc above the worm
+        val arcCx=wx; val arcCy=wy-wormRadius*2.8f
+        val arcR=wormRadius*2.5f
+        val aimArcColor=if(aimActive) 0xFFC8C850.toInt() else 0xFF5078FF.toInt()
         val indicatorPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
-            color=Color.argb(150,255,200,80);style=Paint.Style.STROKE;strokeWidth=3f
+            color=aimArcColor; style=Paint.Style.STROKE; strokeWidth=4f
         }
-        val arcCx=ar.centerX(); val arcCy=ar.centerY()+20f
-        val arcR=minOf(ar.width(),ar.height())*0.35f
         val startAngle=if(worm.team==0) 180f else 0f
         val sweepAngle=(angleDeg/90f)*180f
         canvas.drawArc(arcCx-arcR,arcCy-arcR,arcCx+arcR,arcCy+arcR,
             startAngle, sweepAngle, false, indicatorPaint)
+        // Power bar below the arc
+        val barW=wormRadius*5f; val barH=8f; val barX=wx-barW/2f; val barY=arcCy+arcR+12f
+        canvas.drawRoundRect(RectF(barX,barY,barX+barW,barY+barH),4f,4f,
+            Paint().apply{color=Color.rgb(40,40,40)})
+        canvas.drawRoundRect(RectF(barX,barY,barX+barW*power,barY+barH),4f,4f,
+            Paint().apply{color=Color.argb(200,255,180,60)})
+        // Angle + power text
+        canvas.drawText("${angleDeg.roundToInt()}°  ${(power*100).roundToInt()}%", wx, barY+barH+20f,
+            Paint().apply{color=Color.argb(180,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
     }
 
     private fun updateFrame() {
@@ -1190,40 +1200,40 @@ class GameView(context: Context) : View(context) {
         val pid=event.getPointerId(event.actionIndex)
 
         // ── Handle each pointer ────────────────────────────────────────────
+        // Slingshot aiming: any touch outside buttons starts aiming
+        // Drag = set angle (direction from worm to touch) + power (distance from worm)
+        // Release = fire
         when(action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val x=event.getX(event.findPointerIndex(pid))
                 val y=event.getY(event.findPointerIndex(pid))
-                // Joystick: activate on first touch in move zone
-                if (!joystickActive && movePadRect(w,h).contains(x,y)) {
+                val inJoystick = movePadRect(w,h).contains(x,y)
+                val inJump = jp.contains(x,y)
+                val inWeapon = wp.contains(x,y)
+                val inFire = fr.contains(x,y)
+
+                if (!joystickActive && inJoystick) {
+                    // Joystick touch
                     joystickActive=true; joystickPointerId=pid
                     val mp=movePadRect(w,h); joystickCenterX=mp.centerX(); joystickCenterY=mp.centerY()
-                    joystickTouchX=x; joystickTouchY=y
-                    updateJoystick()
-                }
-                // Aim: activate if in aim zone and no aim pointer yet
-                else if (aimPointerId<0 && ar.contains(x,y)) {
-                    aimPointerId=pid; aimStartX=x; aimStartY=y; aimActive=true
-                    updateAimFromJoystick(x,y)
-                }
-                // Jump: tap to jump (or open parachute)
-                else if (jp.contains(x,y)) jumpCurrentWorm()
-                // Weapon: tap to cycle
-                else if (wp.contains(x,y)) selectedWeapon=(selectedWeapon+1)%weapons.size
-                // Fire: tap to fire immediately
-                else if (fr.contains(x,y)) fireCurrentWeapon()
+                    joystickTouchX=x; joystickTouchY=y; updateJoystick()
+                } else if (!inJoystick && !inJump && !inWeapon && !inFire) {
+                    // Slingshot aim start: touch outside all buttons
+                    aimPointerId=pid; aimStartX=x; aimStartY=y; isSlingshotAiming=true
+                    updateSlingshotAim(x, y)
+                } else if (inJump) jumpCurrentWorm()
+                else if (inWeapon) selectedWeapon=(selectedWeapon+1)%weapons.size
+                else if (inFire) fireCurrentWeapon()
             }
 
             MotionEvent.ACTION_MOVE -> {
-                // Update joystick if its pointer moved
                 if (joystickActive) {
                     val idx=event.findPointerIndex(joystickPointerId)
                     if (idx>=0) { joystickTouchX=event.getX(idx); joystickTouchY=event.getY(idx); updateJoystick() }
                 }
-                // Update aim
-                if (aimPointerId>=0) {
+                if (isSlingshotAiming && aimPointerId>=0) {
                     val idx=event.findPointerIndex(aimPointerId)
-                    if (idx>=0) updateAimFromJoystick(event.getX(idx), event.getY(idx))
+                    if (idx>=0) updateSlingshotAim(event.getX(idx), event.getY(idx))
                 }
             }
 
@@ -1231,10 +1241,29 @@ class GameView(context: Context) : View(context) {
                 if (pid==joystickPointerId) {
                     joystickActive=false; joystickPointerId=-1; moveInput=0f
                 }
-                if (pid==aimPointerId) { aimPointerId=-1; aimActive=false }
+                if (pid==aimPointerId) {
+                    if (isSlingshotAiming) fireCurrentWeapon()
+                    isSlingshotAiming=false; aimPointerId=-1
+                }
             }
         }
         invalidate(); return true
+    }
+
+    private fun updateSlingshotAim(tx: Float, ty: Float) {
+        val worm=worms.getOrNull(activeWormIndex) ?: return
+        if (!worm.alive) return
+        val wx=worm.x*width; val wy=worm.y
+        val dx=tx-wx; val dy=ty-wy
+        val dist=hypot(dx,dy).coerceAtLeast(1f)
+        // Power from drag distance (max 250px = full power)
+        power=(dist/250f).coerceIn(0.18f, 1.0f)
+        // Angle: drag direction determines angle. If worm faces right:
+        // drag RIGHT-UP = aim up-right, drag LEFT-DOWN = aim down-left (backward)
+        val rawAngle=Math.toDegrees(atan2((-dy).toDouble(), dx.toDouble().coerceAtLeast(1.0))).toFloat().coerceIn(8f, 84f)
+        // For left-facing team, flip: drag RIGHT-UP = aim up-left (backward)
+        angleDeg=if(worm.facing==Dir.LEFT) (180f-rawAngle).coerceIn(8f,172f) else rawAngle
+        aimActive=true
     }
 
     private fun updateJoystick() {
@@ -1380,6 +1409,8 @@ class GameView(context: Context) : View(context) {
     private var aimPointerId = -1
     private var aimStartX = 0f
     private var aimStartY = 0f
+    // Slingshot aiming state
+    private var isSlingshotAiming = false
 
     private fun movePadRect(w: Float, h: Float) = RectF(20f, h-200f, 20f+joystickRadius*2, h-200f+joystickRadius*2)
     private fun jumpRect(w: Float, h: Float)   = RectF(w-135f, h-350f, w-20f, h-270f)
