@@ -619,16 +619,64 @@ class GameView(context: Context) : View(context) {
         if (winnerTeam!=null) return
         val mp=movePadRect(w,h); val jp=jumpRect(w,h); val wp=weaponRect(w,h)
         val ar=aimRect(w,h); val fr=fireRect(w,h)
-        canvas.drawOval(mp,panelPaint); canvas.drawOval(mp,panelBorder)
-        canvas.drawText("◀ MOVE ▶",mp.centerX()-28f,mp.centerY()+8f,smallText)
-        canvas.drawRoundRect(jp,14f,14f,activePaint); canvas.drawRoundRect(jp,14f,14f,panelBorder)
-        canvas.drawText("JUMP",jp.left+18f,jp.centerY()+8f,smallText)
+
+        // ── Virtual joystick (MOVE) ─────────────────────────────────────────────
+        // Outer ring
+        canvas.drawCircle(mp.centerX(),mp.centerY(),joystickRadius, Paint().apply{
+            color=Color.argb(60,80,180,255); style=Paint.Style.FILL
+        })
+        canvas.drawCircle(mp.centerX(),mp.centerY(),joystickRadius,
+            Paint().apply{color=Color.argb(120,100,200,255);style=Paint.Style.STROKE;strokeWidth=2.5f})
+        // Inner knob — follows thumb when active
+        val knobX=if(joystickActive) joystickTouchX.coerceIn(mp.centerX()-joystickRadius, mp.centerX()+joystickRadius) else mp.centerX()
+        val knobY=if(joystickActive) joystickTouchY.coerceIn(mp.centerY()-joystickRadius, mp.centerY()+joystickRadius) else mp.centerY()
+        canvas.drawCircle(knobX,knobY,joystickKnobRadius,joystickKnobPaint)
+        canvas.drawCircle(knobX,knobY,joystickKnobRadius,
+            Paint().apply{color=Color.argb(200,255,255,255);style=Paint.Style.STROKE;strokeWidth=2f})
+        canvas.drawText("◀ MOVE ▶",mp.centerX(),mp.centerY()+joystickRadius+18f,
+            Paint().apply{color=Color.argb(180,255,255,255);textSize=17f;textAlign=Paint.Align.CENTER})
+
+        // ── Right-side control buttons ────────────────────────────────────────
+        // FIRE button — largest, most prominent, warm red
+        canvas.drawRoundRect(fr,18f,18f,fireBtnPaint)
+        canvas.drawRoundRect(fr,18f,18f,fireBtnBorder)
+        canvas.drawText("FIRE",fr.centerX(),fr.centerY()+8f,
+            Paint().apply{color=Color.WHITE;textSize=30f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+
+        // WEAPON button
         canvas.drawRoundRect(wp,14f,14f,panelPaint); canvas.drawRoundRect(wp,14f,14f,panelBorder)
-        canvas.drawText("WEAPON",wp.left+8f,wp.centerY()+8f,smallText)
-        canvas.drawRoundRect(ar,18f,18f,panelPaint); canvas.drawRoundRect(ar,18f,18f,panelBorder)
-        canvas.drawText("DRAG AIM",ar.left+20f,ar.centerY()+8f,smallText)
-        canvas.drawRoundRect(fr,14f,14f,activePaint); canvas.drawRoundRect(fr,14f,14f,panelBorder)
-        canvas.drawText("🔥 FIRE",fr.left+22f,fr.centerY()+8f,bodyText)
+        val wpn=weapons[selectedWeapon]
+        canvas.drawText("WPN",wp.centerX(),wp.centerY()-5f,
+            Paint().apply{color=Color.DKGRAY;textSize=18f;textAlign=Paint.Align.CENTER})
+        canvas.drawCircle(wp.centerX(),wp.centerY()+22f,10f,
+            Paint().apply{color=wpn.color})
+
+        // JUMP button
+        canvas.drawRoundRect(jp,14f,14f,activePaint); canvas.drawRoundRect(jp,14f,14f,panelBorder)
+        val jumpLabel=if(worms.getOrNull(activeWormIndex)?.hasParachute==true) "PARA" else "JUMP"
+        canvas.drawText(jumpLabel,jp.centerX(),jp.centerY()+8f,
+            Paint().apply{color=Color.DKGRAY;textSize=22f;textAlign=Paint.Align.CENTER;isFakeBoldText=true})
+
+        // ── Aim zone ───────────────────────────────────────────────────────────
+        // Dashed border hint
+        val aimBorder=Paint().apply{
+            color=if(aimActive) Color.argb(160,255,200,80) else Color.argb(80,255,255,255)
+            style=Paint.Style.STROKE;strokeWidth=2f
+        }
+        canvas.drawRoundRect(ar,12f,12f,aimBorder)
+        canvas.drawText("DRAG AIM · POWER=L/R",ar.centerX(),ar.centerY()+8f,
+            Paint().apply{color=Color.argb(100,255,255,255);textSize=16f;textAlign=Paint.Align.CENTER})
+        // Angle indicator arc inside aim zone
+        val worm=worms.getOrNull(activeWormIndex) ?: return
+        val indicatorPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{
+            color=Color.argb(150,255,200,80);style=Paint.Style.STROKE;strokeWidth=3f
+        }
+        val arcCx=ar.centerX(); val arcCy=ar.centerY()+20f
+        val arcR=minOf(ar.width(),ar.height())*0.35f
+        val startAngle=if(worm.team==0) 180f else 0f
+        val sweepAngle=(angleDeg/90f)*180f
+        canvas.drawArc(arcCx-arcR,arcCy-arcR,arcCx+arcR,arcCy+arcR,
+            startAngle, sweepAngle, false, indicatorPaint)
     }
 
     private fun updateFrame() {
@@ -908,33 +956,81 @@ class GameView(context: Context) : View(context) {
         if (winnerTeam!=null) { if(event.action==MotionEvent.ACTION_DOWN) mode=GameMode.TITLE; return true }
         if (projectiles.isNotEmpty()||explosion!=null) return true
         if (mode==GameMode.PVE && activeTeam()==1) return true
-        val mp=movePadRect(w,h); val jp=jumpRect(w,h)
-        val wp=weaponRect(w,h); val ar=aimRect(w,h); val fr=fireRect(w,h)
-        when(event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                when {
-                    mp.contains(event.x,event.y)->
-                        moveInput=((event.x-mp.centerX())/(mp.width()/2f)).coerceIn(-1f,1f)
-                    jp.contains(event.x,event.y)&&event.actionMasked==MotionEvent.ACTION_DOWN->jumpCurrentWorm()
-                    wp.contains(event.x,event.y)&&event.actionMasked==MotionEvent.ACTION_DOWN->
-                        selectedWeapon=(selectedWeapon+1)%weapons.size
-                    fr.contains(event.x,event.y)&&event.actionMasked==MotionEvent.ACTION_DOWN->fireCurrentWeapon()
-                    ar.contains(event.x,event.y)->{
-                        aimActive=true; updateAim(event.x,event.y)
-                        if (!charging&&event.actionMasked==MotionEvent.ACTION_DOWN) {
-                            charging=true; chargeStartedMs=System.currentTimeMillis()
-                        }
-                    }
+
+        val jp=jumpRect(w,h); val wp=weaponRect(w,h); val fr=fireRect(w,h); val ar=aimRect(w,h)
+        val action=event.actionMasked
+        val pid=event.getPointerId(event.actionIndex)
+
+        // ── Handle each pointer ────────────────────────────────────────────
+        when(action) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val x=event.getX(event.findPointerIndex(pid))
+                val y=event.getY(event.findPointerIndex(pid))
+                // Joystick: activate on first touch in move zone
+                if (!joystickActive && movePadRect(w,h).contains(x,y)) {
+                    joystickActive=true; joystickPointerId=pid
+                    val mp=movePadRect(w,h); joystickCenterX=mp.centerX(); joystickCenterY=mp.centerY()
+                    joystickTouchX=x; joystickTouchY=y
+                    updateJoystick()
+                }
+                // Aim: activate if in aim zone and no aim pointer yet
+                else if (aimPointerId<0 && ar.contains(x,y)) {
+                    aimPointerId=pid; aimStartX=x; aimStartY=y; aimActive=true
+                    updateAimFromJoystick(x,y)
+                }
+                // Jump: tap to jump (or open parachute)
+                else if (jp.contains(x,y)) jumpCurrentWorm()
+                // Weapon: tap to cycle
+                else if (wp.contains(x,y)) selectedWeapon=(selectedWeapon+1)%weapons.size
+                // Fire: tap to fire immediately
+                else if (fr.contains(x,y)) fireCurrentWeapon()
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                // Update joystick if its pointer moved
+                if (joystickActive) {
+                    val idx=event.findPointerIndex(joystickPointerId)
+                    if (idx>=0) { joystickTouchX=event.getX(idx); joystickTouchY=event.getY(idx); updateJoystick() }
+                }
+                // Update aim
+                if (aimPointerId>=0) {
+                    val idx=event.findPointerIndex(aimPointerId)
+                    if (idx>=0) updateAimFromJoystick(event.getX(idx), event.getY(idx))
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL->{
-                if (charging&&aimActive) {
-                    power=(0.20f+(System.currentTimeMillis()-chargeStartedMs).coerceAtMost(1600L)/1600f*0.80f).coerceIn(0.20f,1f)
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                if (pid==joystickPointerId) {
+                    joystickActive=false; joystickPointerId=-1; moveInput=0f
                 }
-                moveInput=0f; charging=false; aimActive=false
+                if (pid==aimPointerId) { aimPointerId=-1; aimActive=false }
             }
         }
         invalidate(); return true
+    }
+
+    private fun updateJoystick() {
+        if (!joystickActive) return
+        val dx=joystickTouchX-joystickCenterX; val dy=joystickTouchY-joystickCenterY
+        val dist=hypot(dx,dy).coerceAtLeast(1f)
+        val clampedDist=min(dist,joystickRadius)
+        moveInput=(clampedDist/joystickRadius)*(dx/dist).coerceIn(-1f,1f)
+        // Update worm facing direction from joystick X
+        val worm=worms.getOrNull(activeWormIndex) ?: return
+        if (moveInput>0.05f) worm.facing=Dir.RIGHT else if(moveInput<-0.05f) worm.facing=Dir.LEFT
+    }
+
+    private fun updateAimFromJoystick(tx: Float, ty: Float) {
+        val worm=worms[activeWormIndex]; if(!worm.alive) return
+        // Angle: vertical delta from touch start to worm
+        val dy=(worm.y-wormRadius)-ty
+        // Horizontal delta from touch start determines power
+        val powerDx=(tx-aimStartX)
+        val dir=if(worm.team==0) 1f else -1f
+        // Angle: 0°=flat, 90°=straight up
+        angleDeg=Math.toDegrees(atan2(dy.toDouble().coerceAtLeast(1.0), abs(powerDx).toDouble().coerceAtLeast(1.0))).toFloat().coerceIn(8f,84f)
+        // Power from horizontal displacement
+        power=(abs(powerDx)/(width*0.32f)).coerceIn(0.18f,1f)
     }
 
     private fun updateAim(tx: Float, ty: Float) {
@@ -1021,11 +1117,44 @@ class GameView(context: Context) : View(context) {
         return Color.alpha(bmp.getPixel(ix,iy))>0
     }
 
-    private fun movePadRect(w: Float,h: Float)=RectF(24f,h-150f,174f,h-20f)
-    private fun jumpRect(w: Float,h: Float)=RectF(w-330f,h-150f,w-220f,h-80f)
-    private fun weaponRect(w: Float,h: Float)=RectF(w-200f,h-150f,w-60f,h-80f)
-    private fun aimRect(w: Float,h: Float)=RectF(w-290f,h-340f,w-24f,h-180f)
-    private fun fireRect(w: Float,h: Float)=RectF(w-210f,h-72f,w-24f,h-18f)
+    // New optimized control layout:
+    // - Bottom-left: virtual joystick (MOVE)
+    // - Right side: FIRE (large), WEAPON, JUMP stacked
+    // - Upper-right area: AIM zone
+    private val joystickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(100, 100, 100, 200); style = Paint.Style.FILL
+    }
+    private val joystickKnobPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(180, 200, 200, 255); style = Paint.Style.FILL
+    }
+    private val joystickBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(160, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 3f
+    }
+    private val fireBtnPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(230, 80, 30); style = Paint.Style.FILL
+    }
+    private val fireBtnBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 140, 60); style = Paint.Style.STROKE; strokeWidth = 3f
+    }
+    // Track joystick state
+    private var joystickActive = false
+    private var joystickPointerId = -1
+    private var joystickCenterX = 0f
+    private var joystickCenterY = 0f
+    private var joystickTouchX = 0f
+    private var joystickTouchY = 0f
+    private val joystickRadius = 70f   // outer radius
+    private val joystickKnobRadius = 28f // inner knob radius
+    // Track aim state
+    private var aimPointerId = -1
+    private var aimStartX = 0f
+    private var aimStartY = 0f
+
+    private fun movePadRect(w: Float, h: Float) = RectF(20f, h-200f, 20f+joystickRadius*2, h-200f+joystickRadius*2)
+    private fun jumpRect(w: Float, h: Float)   = RectF(w-135f, h-350f, w-20f, h-270f)
+    private fun weaponRect(w: Float, h: Float) = RectF(w-135f, h-260f, w-20f, h-180f)
+    private fun fireRect(w: Float, h: Float)   = RectF(w-135f, h-170f, w-20f, h-80f)
+    private fun aimRect(w: Float, h: Float)    = RectF(w*0.38f, 190f, w-20f, h-365f)
 
     private fun randomWind()=Random.nextFloat()*84f-42f
 
